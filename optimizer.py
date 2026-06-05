@@ -1,28 +1,43 @@
 import numpy as np
 import torch
 
-class OneBitOptimizer(torch.optim.Optimizer):
-    def __init__(self, params, lr=0.001, momentum=0.9):
-        defaults = dict(lr=lr, momentum=momentum)
+class OrthogonalOptimizer(torch.optim.Optimizer):
+    def __init__(self, params, lr=0.001, momentum=0.9, num_bits=1):
+        defaults = dict(lr=lr, momentum=momentum, num_bits=num_bits)
         super().__init__(params, defaults)
-        self.basis_mats = {}
         for group in self.param_groups:
             for p in group['params']:
                 if len(p.shape) < 2: # skip biases
                     continue
+                self.state[p] = {}
+                self.state[p]["basis_rots"] = []
+                self.state[p]["binary_coeffs"] = []
                 row, col = p.shape
                 n = max(2, int(2 ** np.ceil(np.log2(max(row, col))))) # need to find what dim we want for basis since not always power of 2 or square
-                w_padded = torch.zeros((n, n), dtype=torch.float32, device=p.device)
-                w_padded[:row, :col] = p.data
-                w_flat = w_padded.view(1, -1)
-                c_raw = self.hb_transform(w_flat).view(n, n)/(n * n)
-                c = torch.sign(c_raw)
-                c[c == 0] = 1
-                self.state[p]["binary_coeffs"] = c
                 self.state[p]["momentum_buffer"] = torch.zeros((n, n), dtype=torch.float32, device=p.device)
-                w_dec_padded = self.hb_transform(c.view(1, -1)).view(n, n)
-                w_dec = w_dec_padded[:row, :col]
-                p.data.copy_(w_dec)
+                sum_w_dec_padded = torch.zeros((n, n), dtype=torch.float32, device=p.device)
+                for i in range(group["num_bits"]):
+                    if i == 0:
+                        self.state[p]["basis_rots"].append((torch.eye(n, device=p.device), torch.eye(n, device=p.device)))
+                    else:
+                        l = torch.randn(n, n, device=p.device)
+                        U_l, _ = torch.linalg.qr(l)
+                        r = torch.randn(n, n, device=p.device)
+                        U_r, _ = torch.linalg.qr(r)
+                        self.state[p]["basis_rots"].append((U_l, U_r))
+                    w_padded = torch.zeros((n, n), dtype=torch.float32, device=p.device)
+                    w_padded[:row, :col] = p.data
+                    w_rotated = self.state[p]["basis_rots"][-1][0].T @ w_padded @ self.state[p]["basis_rots"][-1][1] 
+                    w_flat = w_rotated.view(1, -1)
+                    c_raw = self.hb_transform(w_flat).view(n, n)/(n * n)
+                    c = torch.sign(c_raw)
+                    c[c == 0] = 1
+                    self.state[p]["binary_coeffs"].append(c)
+                    w_dec_padded = self.state[p]["basis_rots"][-1][0] @ self.hb_transform(c.view(1, -1)).view(n, n) @ self.state[p]["basis_rots"][-1][1].T
+                    sum_w_dec_padded += w_dec_padded
+                sum_w_dec = (sum_w_dec_padded / group["num_bits"])[:row, :col]
+                with torch.no_grad():
+                    p.data.copy_(sum_w_dec)
     
     def step(self, closure=None):
         loss = None
@@ -35,7 +50,6 @@ class OneBitOptimizer(torch.optim.Optimizer):
                     continue
                 if len(p.shape) < 2: # skip biases
                     continue
-                c = self.state[p]["binary_coeffs"]
                 m = self.state[p]["momentum_buffer"]
                 row, col = p.shape
                 n = m.shape[0]
@@ -45,18 +59,24 @@ class OneBitOptimizer(torch.optim.Optimizer):
                 m[row:, :] = 0
                 m[:, col:] = 0
                 self.state[p]["momentum_buffer"] = m
-                mb = self.hb_transform(m.view(1, -1)).view(n, n)
-                scores = mb * c
-                # assuming we only update 1 bit per step
-                min_wi = torch.argmin(scores)
-                flipr = min_wi // n
-                flipc = min_wi % n
-                if scores[flipr, flipc] < 0:
-                    c[flipr, flipc] *= -1
-                self.state[p]["binary_coeffs"] = c
-                w_dec_padded = self.hb_transform(c.view(1, -1)).view(n, n)/(n * n)
-                w_dec = w_dec_padded[:row, :col]
-                p.data.copy_(w_dec)
+                sum_w_dec_padded = torch.zeros((n, n), dtype=torch.float32, device=p.device)
+                for i in range(group["num_bits"]):
+                    c = self.state[p]["binary_coeffs"][i]
+                    m_rotated = self.state[p]["basis_rots"][i][0].T @ m @ self.state[p]["basis_rots"][i][1]
+                    mb = self.hb_transform(m_rotated.view(1, -1)).view(n, n)
+                    scores = mb * c
+                    # assuming we update 1 bit per step, differs by basis
+                    min_wi = torch.argmin(scores).item()
+                    flipr = min_wi // n
+                    flipc = min_wi % n
+                    if scores[flipr, flipc] < 0:
+                        c[flipr, flipc] *= -1
+                    self.state[p]["binary_coeffs"][i] = c
+                    w_dec_padded = self.state[p]["basis_rots"][i][0] @ self.hb_transform(c.view(1, -1)).view(n, n) @ self.state[p]["basis_rots"][i][1].T
+                    sum_w_dec_padded += w_dec_padded
+                sum_w_dec = (sum_w_dec_padded / group["num_bits"])[:row, :col]
+                with torch.no_grad():
+                    p.data.copy_(sum_w_dec)
         return loss
     
     def hb_transform(self, x):
