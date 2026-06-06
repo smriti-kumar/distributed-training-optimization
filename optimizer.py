@@ -29,11 +29,12 @@ class OrthogonalOptimizer(torch.optim.Optimizer):
                     w_padded[:row, :col] = p.data
                     w_rotated = self.state[p]["basis_rots"][-1][0].T @ w_padded @ self.state[p]["basis_rots"][-1][1] 
                     w_flat = w_rotated.view(1, -1)
-                    c_raw = self.hb_transform(w_flat).view(n, n)/(n * n)
+                    c_raw = self.hb_transform(w_flat).view(n, n)
                     c = torch.sign(c_raw)
                     c[c == 0] = 1
                     self.state[p]["binary_coeffs"].append(c)
-                    w_dec_padded = self.state[p]["basis_rots"][-1][0] @ self.hb_transform(c.view(1, -1)).view(n, n) @ self.state[p]["basis_rots"][-1][1].T
+                    c_dec = self.hb_transform(c.view(1, -1)).view(n, n) / (n * n)
+                    w_dec_padded = self.state[p]["basis_rots"][-1][0] @ c_dec @ self.state[p]["basis_rots"][-1][1].T
                     sum_w_dec_padded += w_dec_padded
                 sum_w_dec = (sum_w_dec_padded / group["num_bits"])[:row, :col]
                 with torch.no_grad():
@@ -72,7 +73,8 @@ class OrthogonalOptimizer(torch.optim.Optimizer):
                     if scores[flipr, flipc] < 0:
                         c[flipr, flipc] *= -1
                     self.state[p]["binary_coeffs"][i] = c
-                    w_dec_padded = self.state[p]["basis_rots"][i][0] @ self.hb_transform(c.view(1, -1)).view(n, n) @ self.state[p]["basis_rots"][i][1].T
+                    c_dec = self.hb_transform(c.view(1, -1)).view(n, n) / (n * n)
+                    w_dec_padded = self.state[p]["basis_rots"][i][0] @ c_dec @ self.state[p]["basis_rots"][i][1].T
                     sum_w_dec_padded += w_dec_padded
                 sum_w_dec = (sum_w_dec_padded / group["num_bits"])[:row, :col]
                 with torch.no_grad():
