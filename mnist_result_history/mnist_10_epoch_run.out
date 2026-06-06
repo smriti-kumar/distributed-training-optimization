@@ -1,4 +1,4 @@
-after divide c_raw by n instead of n^2 fix
+after divide c_raw by n instead of n^2 fix - 1 bit only - really good weight initialization
 Using device: cuda
 Epoch [1/10]
 Training loss 22086.914955078126
