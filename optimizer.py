@@ -2,8 +2,8 @@ import numpy as np
 import torch
 
 class OrthogonalOptimizer(torch.optim.Optimizer):
-    def __init__(self, params, lr=0.001, momentum=0.9, num_bits=1):
-        defaults = dict(lr=lr, momentum=momentum, num_bits=num_bits)
+    def __init__(self, params, lr=0.001, momentum=0.9, num_bits=1, num_flips=1):
+        defaults = dict(lr=lr, momentum=momentum, num_bits=num_bits, num_flips=num_flips)
         super().__init__(params, defaults)
         for group in self.param_groups:
             for p in group['params']:
@@ -67,11 +67,12 @@ class OrthogonalOptimizer(torch.optim.Optimizer):
                     mb = self.hb_transform(m_rotated.view(1, -1)).view(n, n)
                     scores = mb * c
                     # assuming we update 1 bit per step, differs by basis
-                    min_wi = torch.argmin(scores).item()
-                    flipr = min_wi // n
-                    flipc = min_wi % n
-                    if scores[flipr, flipc] < 0:
-                        c[flipr, flipc] *= -1
+                    _, min_wi = torch.topk(scores.view(-1), min(group["num_flips"], n * n), largest=False)
+                    for min_i in min_wi:
+                        flipr = min_i // n
+                        flipc = min_i % n
+                        if scores[flipr, flipc] < 0:
+                            c[flipr, flipc] *= -1
                     self.state[p]["binary_coeffs"][i] = c
                     c_dec = self.hb_transform(c.view(1, -1)).view(n, n) / (n * n)
                     w_dec_padded = self.state[p]["basis_rots"][i][0] @ c_dec @ self.state[p]["basis_rots"][i][1].T
