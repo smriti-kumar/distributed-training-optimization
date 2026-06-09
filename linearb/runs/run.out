@@ -1,3 +1,4 @@
+initial implementation
 Using device: cuda
 No checkpoint found, starting training from scratch.
 Epoch [1/10]

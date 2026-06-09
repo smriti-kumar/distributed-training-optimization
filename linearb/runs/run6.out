@@ -1,0 +1,63 @@
+weight initialization exactly 50% 1 and 50% -1, shuffle indices
+Using device: cuda
+No checkpoint found, starting training from scratch.
+Epoch [1/10]
+Training loss 50830.666114024316
+Training accuracy 85.45166666666667 %
+Testing loss 12381.0255859375
+Testing accuracy 91.61 %
+Checkpoint saved securely at end of epoch 1
+Epoch [2/10]
+Training loss 15456.48578108052
+Training accuracy 89.20333333333333 %
+Testing loss 8817.033569335938
+Testing accuracy 92.18 %
+Checkpoint saved securely at end of epoch 2
+Epoch [3/10]
+Training loss 11287.429662467448
+Training accuracy 89.23333333333333 %
+Testing loss 7959.793286132813
+Testing accuracy 90.97 %
+Checkpoint saved securely at end of epoch 3
+Epoch [4/10]
+Training loss 8805.463294466146
+Training accuracy 89.40166666666667 %
+Testing loss 6730.433764648437
+Testing accuracy 91.31 %
+Checkpoint saved securely at end of epoch 4
+Epoch [5/10]
+Training loss 7697.181691796875
+Training accuracy 89.535 %
+Testing loss 5611.98916015625
+Testing accuracy 91.81 %
+Checkpoint saved securely at end of epoch 5
+Epoch [6/10]
+Training loss 6699.987024594092
+Training accuracy 89.31333333333333 %
+Testing loss 6105.6202392578125
+Testing accuracy 90.77 %
+Checkpoint saved securely at end of epoch 6
+Epoch [7/10]
+Training loss 6040.353334443967
+Training accuracy 89.11333333333333 %
+Testing loss 5138.325122070312
+Testing accuracy 91.61 %
+Checkpoint saved securely at end of epoch 7
+Epoch [8/10]
+Training loss 5516.380452913411
+Training accuracy 89.22833333333334 %
+Testing loss 4652.583081054688
+Testing accuracy 91.04 %
+Checkpoint saved securely at end of epoch 8
+Epoch [9/10]
+Training loss 5111.163948428686
+Training accuracy 88.89333333333333 %
+Testing loss 4117.933032226562
+Testing accuracy 91.07 %
+Checkpoint saved securely at end of epoch 9
+Epoch [10/10]
+Training loss 4547.118906038428
+Training accuracy 89.14666666666666 %
+Testing loss 3858.7726196289063
+Testing accuracy 91.01 %
+Checkpoint saved securely at end of epoch 10

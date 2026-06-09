@@ -1,0 +1,63 @@
+orthogonal rotation on input and dropout with 3 512 block layers and dropout - demo of what happens if i move away from 2 layers
+Using device: cuda
+No checkpoint found, starting training from scratch.
+Epoch [1/25]
+Training loss 48733953.74453982
+Training accuracy 11.191666666666666 %
+Testing loss 68.58070917129517
+Testing accuracy 11.42 %
+Checkpoint saved securely at end of epoch 1
+Epoch [2/25]
+Training loss 13.919000371487936
+Training accuracy 11.246666666666666 %
+Testing loss 29.517564868927003
+Testing accuracy 11.43 %
+Checkpoint saved securely at end of epoch 2
+Epoch [3/25]
+Training loss 7.483324020957947
+Training accuracy 11.261666666666667 %
+Testing loss 25.869939351081847
+Testing accuracy 11.41 %
+Checkpoint saved securely at end of epoch 3
+Epoch [4/25]
+Training loss 2.799988540458679
+Training accuracy 11.255 %
+Testing loss 25.98761682510376
+Testing accuracy 11.37 %
+Checkpoint saved securely at end of epoch 4
+Epoch [5/25]
+Training loss 9.186784167162577
+Training accuracy 11.256666666666666 %
+Testing loss 67.63812215328217
+Testing accuracy 11.38 %
+Checkpoint saved securely at end of epoch 5
+Epoch [6/25]
+Training loss 90.04020249608358
+Training accuracy 11.251666666666667 %
+Testing loss 25.71337718963623
+Testing accuracy 11.37 %
+Checkpoint saved securely at end of epoch 6
+Epoch [7/25]
+Training loss 2.383156772168477
+Training accuracy 11.251666666666667 %
+Testing loss 25.818157339096068
+Testing accuracy 11.37 %
+Checkpoint saved securely at end of epoch 7
+Epoch [8/25]
+Training loss 2.4027833521525066
+Training accuracy 11.246666666666666 %
+Testing loss 25.87661325931549
+Testing accuracy 11.37 %
+Checkpoint saved securely at end of epoch 8
+Epoch [9/25]
+Training loss 2.3012896030426027
+Training accuracy 11.253333333333334 %
+Testing loss 25.87916796207428
+Testing accuracy 11.37 %
+Checkpoint saved securely at end of epoch 9
+Epoch [10/25]
+Training loss 2.3264524695714313
+Training accuracy 11.251666666666667 %
+Testing loss 25.89190275669098
+Testing accuracy 11.37 %
+Checkpoint saved securely at end of epoch 10

@@ -9,8 +9,21 @@ class LinearB(nn.Module):
         self.out_params = out_params
         self.num_bases = num_bases
         self.n = max(2, int(2 ** torch.ceil(torch.log2(torch.tensor(max(in_params, out_params))))))
-        binary_bits = torch.sign(torch.randn(num_bases, self.n * self.n, device=current_device))
-        self.binary_coeffs = torch.nn.Parameter(binary_bits, requires_grad=False)
+        binary_bits = [] # (b, n^2)
+        # binary_bits = torch.sign(torch.randn(num_bases, self.n * self.n, device=current_device))
+        # hb = self.hb_transform(torch.eye(self.n, device=current_device)) # (n, sqrt(n), sqrt(n))
+        # hb = hb.view(self.n, self.n) # (n, n)
+        # hb = torch.sign(hb) # (n, n)
+        # hb = hb.view(self.n * self.n) # (n^2)
+        # for i in range(num_bases):
+        #     binary_bits.append(torch.roll(hb, shifts=(i * (self.n * self.n // num_bases)), dims=0).reshape(self.n * self.n))
+        for i in range(num_bases):
+            basis_bits = torch.ones(self.n * self.n, device=current_device)
+            basis_bits[((self.n * self.n) // 2):] = -1
+            shuffled = torch.randperm(self.n * self.n, device=current_device)
+            basis_bits = basis_bits[shuffled]
+            binary_bits.append(basis_bits)
+        self.binary_coeffs = torch.nn.Parameter(torch.stack(binary_bits), requires_grad=False) # (b, n^2)
         self.binary_coeffs.is_quantized_basis = True
         self.binary_coeffs.binary_coeffs = self.binary_coeffs
         self.binary_coeffs.true_shape = (out_params, in_params)
