@@ -7,7 +7,8 @@ class OrthogonalOptimizer(torch.optim.Optimizer):
         for group in self.param_groups:
             for p in group['params']:
                 self.state[p] = {}
-                
+
+    @torch.no_grad()
     def step(self, closure=None):
         loss = None
         if closure is not None:
@@ -20,30 +21,28 @@ class OrthogonalOptimizer(torch.optim.Optimizer):
                 if not getattr(p, 'is_quantized_basis', False): # gradient descent on biases and non linearb layers
                     p.data -= group['lr'] * p.grad.data
                     continue
+                # print('psassed the threshold')
                 num_bases, nxn = p.binary_coeffs.shape
                 n = int(nxn**0.5)
                 if "momentum_buffer" not in self.state[p]:
-                    self.state[p]["momentum_buffer"] = torch.zeros((n, n), dtype=torch.float32, device=p.device)
+                    self.state[p]["momentum_buffer"] = torch.zeros_like(p.binary_coeffs)
                 m = self.state[p]["momentum_buffer"]
-                row, col = p.true_shape
-                grad_padded = torch.zeros((n, n), dtype=torch.float32, device=p.device)
-                grad_padded[:row, :col] = p.grad.data
-                m = group["momentum"] * m + (1 - group["momentum"]) * grad_padded
-                m[row:, :] = 0
-                m[:, col:] = 0
+                m = group["momentum"] * m + (1 - group["momentum"]) * p.grad
                 self.state[p]["momentum_buffer"] = m
-                for i in range(num_bases):
-                    c = p.binary_coeffs[i].view(n, n)
-                    m_rotated = p.U_L[i].T @ m @ p.U_R[i].T
-                    mb = self.hb_transform(m_rotated.view(1, -1)).view(n, n)
-                    scores = mb * c
-                    _, min_wi = torch.topk(scores.view(-1), min(group["num_flips"], n * n), largest=False)
-                    for min_i in min_wi:
-                        flipr = min_i // n
-                        flipc = min_i % n
-                        if scores[flipr, flipc] < 0:
-                            c[flipr, flipc] *= -1
-                    p.binary_coeffs[i] = c.view(-1)
+                i = (m * p).view(-1).argmax()
+                p.view(-1)[i] *= -1
+                # for i in range(num_bases):
+                #     c = p.binary_coeffs[i].view(n, n)
+                #     m_rotated = p.U_L[i].T @ m @ p.U_R[i].T
+                #     mb = self.hb_transform(m_rotated.view(1, -1)).view(n, n)
+                #     scores = mb * c
+                #     _, min_wi = torch.topk(scores.view(-1), min(group["num_flips"], n * n), largest=False)
+                #     for min_i in min_wi:
+                #         flipr = min_i // n
+                #         flipc = min_i % n
+                #         if scores[flipr, flipc] < 0:
+                #             c[flipr, flipc] *= -1
+                #     p.binary_coeffs[i] = c.view(-1)
         return loss
     
     def hb_transform(self, x):

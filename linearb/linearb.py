@@ -23,12 +23,14 @@ class LinearB(nn.Module):
             shuffled = torch.randperm(self.n * self.n, device=current_device)
             basis_bits = basis_bits[shuffled]
             binary_bits.append(basis_bits)
-        self.binary_coeffs = torch.nn.Parameter(torch.stack(binary_bits), requires_grad=False) # (b, n^2)
+        self.binary_coeffs = torch.nn.Parameter(torch.stack(binary_bits)) # (b, n^2)
         self.binary_coeffs.is_quantized_basis = True
         self.binary_coeffs.binary_coeffs = self.binary_coeffs
         self.binary_coeffs.true_shape = (out_params, in_params)
         self.bias = torch.nn.Parameter(torch.zeros(out_params, device=current_device))
         self.bias.is_quantized_basis = False
+
+        self.scale = 0.01 # something that depends on the size of the weight matrix
 
         U_Ls = []
         U_Rs = []
@@ -47,11 +49,15 @@ class LinearB(nn.Module):
         self.register_buffer("U_R", torch.stack(U_Rs))
         self.binary_coeffs.U_L = self.U_L
         self.binary_coeffs.U_R = self.U_R
-    
-    def forward(self, x):
+
+    def weight(self):
         W = self.hb_transform(self.binary_coeffs)
         W = self.U_L @ W @ self.U_R
         W = torch.sum(W, dim=0)[:self.out_params, :self.in_params]
+        return W * self.scale
+    
+    def forward(self, x):
+        W = self.weight()
         return x @ W.T + self.bias
 
     def hb_transform(self, x):
