@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-class LinearB(nn.Module):
+class LinearSB(nn.Module):
     def __init__(self, in_params, out_params, num_bases):
         super().__init__()
         current_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -37,42 +37,11 @@ class LinearB(nn.Module):
         self.binary_coeffs.U_R = self.U_R
     
     def weight(self):
-        W = self.hb_transform(self.binary_coeffs)
-        W = self.U_L @ W @ self.U_R
+        c = self.binary_coeffs.view(self.num_bases, self.n, self.n)
+        W = self.U_L @ c @ self.U_R
         W = torch.sum(W, dim=0)[:self.out_params, :self.in_params]
         return W * self.scale
     
     def forward(self, x):
         W = self.weight()
         return x @ W.T + self.bias
-    
-    # def hb_transform(self, x):
-    #     if len(x.shape) == 1:
-    #         x = x.view(1,-1)
-    #     (m,n) = x.shape
-    #     k = 1
-    #     while 4**k < n:
-    #         k += 1
-    #     assert(4**k == n)
-    #     x = x.reshape((m,) + (4,)*k)
-    #     for i in range(k):
-    #         x = x.sum(1+i,keepdim=True) - 2*x
-    #     x = x.reshape((m,) + (2,2)*k)
-    #     x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
-    #     return x.reshape(m, 2**k, 2**k) / (2**k)
-
-    def hb_transform(self, x):
-        if len(x.shape) == 1:
-            x = x.view(1,-1)
-        (m,n) = x.shape
-        k = 1
-        while 4**k < n:
-            k += 1
-        assert(4**k == n)
-        b = torch.tensor([1,1,-1,-1]).to(dtype=x.dtype, device=x.device)
-        x = x.reshape((m,) + (4,)*k)
-        for i in range(k):
-            x = x.flip(1+i) + x * b.view((1,)*(i+1) + (4,) + (1,)*(k-1-i))
-        x = x.reshape((m,) + (2,2)*k)
-        x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
-        return x.reshape(m, 2**k, 2**k)

@@ -1,0 +1,3296 @@
+class mnist(nn.Module):
+    def __init__(self, num_bases):
+        super().__init__()
+        q, _ = torch.linalg.qr(torch.randn(784, 784, device=device))
+        self.register_buffer('q', q)
+        self.layer1 = LinearB(784, 1024, num_bases=num_bases)
+        self.relu1 = nn.ReLU()
+        self.drop1 = nn.Dropout(0.2)
+        self.layer2 = LinearB(1024, 1024, num_bases=num_bases)
+        self.relu2 = nn.ReLU()
+        self.classifier = nn.Linear(1024, 10)
+    def forward(self, x):
+        x = x.flatten(start_dim=1)
+        x = x @ self.q
+        x = self.relu1(self.layer1(x))
+        residual = x
+        x = self.drop1(x)
+        x = self.relu2(self.layer2(x))
+        x = x + residual
+        return self.classifier(x)
+model = mnist(num_bases=num_bases).to(device)
+criterion = nn.CrossEntropyLoss()
+orth_optimizer = OrthogonalOptimizer(orth_params, lr=0.01, momentum=0.9, num_flips=num_flips)
+adam_optimizer = optim.Adam(adam_params, lr=0.01)
+epochs = 25
+
+def hb_transform(self, x):
+    if len(x.shape) == 1:
+        x = x.view(1,-1)
+    (m,n) = x.shape
+    k = 1
+    while 4**k < n:
+        k += 1
+    assert(4**k == n)
+    b = torch.tensor([1,1,-1,-1]).to(dtype=x.dtype, device=x.device)
+    x = x.reshape((m,) + (4,)*k)
+    for i in range(k):
+        x = x.flip(1+i) + x * b.view((1,)*(i+1) + (4,) + (1,)*(k-1-i))
+    x = x.reshape((m,) + (2,2)*k)
+    x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
+    return x.reshape(m, 2**k, 2**k)
+
+Using device: cuda
+
+Training with num_bases=1, num_flips=1
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 312.5705268880876
+Training accuracy 83.87166666666667 %
+Testing loss 165.75778427124024
+Testing accuracy 92.66 %
+Epoch [2/25]
+Training loss 334.2303272479398
+Training accuracy 88.20833333333333 %
+Testing loss 168.1585548400879
+Testing accuracy 93.48 %
+Epoch [3/25]
+Training loss 330.91794932131546
+Training accuracy 89.44 %
+Testing loss 198.67099685668944
+Testing accuracy 93.37 %
+Epoch [4/25]
+Training loss 326.6977872125643
+Training accuracy 90.46 %
+Testing loss 210.63193054199218
+Testing accuracy 93.5 %
+Epoch [5/25]
+Training loss 313.5492097873973
+Training accuracy 91.06666666666666 %
+Testing loss 176.65016593933106
+Testing accuracy 94.63 %
+Epoch [6/25]
+Training loss 303.11132759567374
+Training accuracy 91.51833333333333 %
+Testing loss 192.6369758605957
+Testing accuracy 94.15 %
+Epoch [7/25]
+Training loss 298.3734041740316
+Training accuracy 91.95 %
+Testing loss 160.43108139038085
+Testing accuracy 94.88 %
+Epoch [8/25]
+Training loss 292.23678842497617
+Training accuracy 92.15666666666667 %
+Testing loss 172.08020057678223
+Testing accuracy 94.82 %
+Epoch [9/25]
+Training loss 273.7117417508382
+Training accuracy 92.57666666666667 %
+Testing loss 207.27743949890137
+Testing accuracy 94.25 %
+Epoch [10/25]
+Training loss 276.7232450684312
+Training accuracy 92.65333333333334 %
+Testing loss 180.06389045715332
+Testing accuracy 94.84 %
+Epoch [11/25]
+Training loss 264.0207413273939
+Training accuracy 92.88 %
+Testing loss 211.1833126068115
+Testing accuracy 94.74 %
+Epoch [12/25]
+Training loss 261.472159016522
+Training accuracy 93.035 %
+Testing loss 194.42528343200684
+Testing accuracy 94.64 %
+Epoch [13/25]
+Training loss 256.0047580551628
+Training accuracy 93.25166666666667 %
+Testing loss 182.4924587249756
+Testing accuracy 95.24 %
+Epoch [14/25]
+Training loss 246.85203707426328
+Training accuracy 93.41333333333333 %
+Testing loss 175.78116340637206
+Testing accuracy 95.36 %
+Epoch [15/25]
+Training loss 245.71906707224036
+Training accuracy 93.56 %
+Testing loss 163.85527114868165
+Testing accuracy 95.83 %
+Epoch [16/25]
+Training loss 237.57425612867556
+Training accuracy 93.72 %
+Testing loss 194.59955062866212
+Testing accuracy 95.31 %
+Epoch [17/25]
+Training loss 236.56547662673896
+Training accuracy 93.765 %
+Testing loss 192.70392417907715
+Testing accuracy 95.27 %
+Epoch [18/25]
+Training loss 235.35993900324527
+Training accuracy 93.97333333333333 %
+Testing loss 198.6433246612549
+Testing accuracy 95.11 %
+Epoch [19/25]
+Training loss 230.61782850614998
+Training accuracy 93.96 %
+Testing loss 190.93486518859862
+Testing accuracy 95.47 %
+Epoch [20/25]
+Training loss 225.33049760376167
+Training accuracy 94.14333333333333 %
+Testing loss 176.23988647460936
+Testing accuracy 95.64 %
+Epoch [21/25]
+Training loss 217.09413483304587
+Training accuracy 94.225 %
+Testing loss 189.7050579071045
+Testing accuracy 95.27 %
+Epoch [22/25]
+Training loss 218.23579789857098
+Training accuracy 94.25833333333334 %
+Testing loss 159.9192657470703
+Testing accuracy 96.02 %
+Epoch [23/25]
+Training loss 214.1356578457608
+Training accuracy 94.42666666666666 %
+Testing loss 168.58903541564942
+Testing accuracy 95.66 %
+Epoch [24/25]
+Training loss 214.98694412404043
+Training accuracy 94.435 %
+Testing loss 158.36900100708007
+Testing accuracy 95.76 %
+Epoch [25/25]
+Training loss 208.22281213437103
+Training accuracy 94.52333333333333 %
+Testing loss 161.07451820373535
+Testing accuracy 95.91 %
+
+Training with num_bases=1, num_flips=2
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 273.2580785062895
+Training accuracy 83.785 %
+Testing loss 139.44546203613282
+Testing accuracy 92.65 %
+Epoch [2/25]
+Training loss 276.9840604608711
+Training accuracy 88.97833333333334 %
+Testing loss 147.89577255249023
+Testing accuracy 93.97 %
+Epoch [3/25]
+Training loss 273.8231768806137
+Training accuracy 90.61 %
+Testing loss 158.6018264770508
+Testing accuracy 94.16 %
+Epoch [4/25]
+Training loss 277.84513211584516
+Training accuracy 91.265 %
+Testing loss 143.87731475830077
+Testing accuracy 95.11 %
+Epoch [5/25]
+Training loss 261.06499888809327
+Training accuracy 91.84 %
+Testing loss 161.3494415283203
+Testing accuracy 94.76 %
+Epoch [6/25]
+Training loss 250.1310999907149
+Training accuracy 92.40666666666667 %
+Testing loss 172.7459629058838
+Testing accuracy 94.66 %
+Epoch [7/25]
+Training loss 245.4938269380919
+Training accuracy 92.72666666666667 %
+Testing loss 133.01998710632324
+Testing accuracy 95.71 %
+Epoch [8/25]
+Training loss 246.73098615894853
+Training accuracy 92.875 %
+Testing loss 150.85402450561523
+Testing accuracy 95.34 %
+Epoch [9/25]
+Training loss 237.77420049480506
+Training accuracy 93.19333333333333 %
+Testing loss 149.36206493377685
+Testing accuracy 95.56 %
+Epoch [10/25]
+Training loss 231.81757526633615
+Training accuracy 93.31166666666667 %
+Testing loss 145.72531566619872
+Testing accuracy 95.61 %
+Epoch [11/25]
+Training loss 219.89679028477318
+Training accuracy 93.49333333333334 %
+Testing loss 150.51839237213136
+Testing accuracy 95.27 %
+Epoch [12/25]
+Training loss 215.74893100663957
+Training accuracy 93.65 %
+Testing loss 139.07691497802733
+Testing accuracy 95.62 %
+Epoch [13/25]
+Training loss 210.1481124679487
+Training accuracy 93.74333333333334 %
+Testing loss 137.2144666671753
+Testing accuracy 95.95 %
+Epoch [14/25]
+Training loss 209.15031970491674
+Training accuracy 93.90833333333333 %
+Testing loss 142.64503726959228
+Testing accuracy 95.96 %
+Epoch [15/25]
+Training loss 205.52133270073526
+Training accuracy 94.045 %
+Testing loss 126.86016216278077
+Testing accuracy 96.17 %
+Epoch [16/25]
+Training loss 204.0766429467839
+Training accuracy 94.13833333333334 %
+Testing loss 141.06820220947264
+Testing accuracy 95.75 %
+Epoch [17/25]
+Training loss 197.15282965793395
+Training accuracy 94.20166666666667 %
+Testing loss 141.64839935302734
+Testing accuracy 95.7 %
+Epoch [18/25]
+Training loss 196.98665862584343
+Training accuracy 94.225 %
+Testing loss 133.81484870910646
+Testing accuracy 96.02 %
+Epoch [19/25]
+Training loss 193.34299714257267
+Training accuracy 94.26166666666667 %
+Testing loss 130.33967323303222
+Testing accuracy 95.83 %
+Epoch [20/25]
+Training loss 190.86895005230605
+Training accuracy 94.34666666666666 %
+Testing loss 148.613134765625
+Testing accuracy 95.79 %
+Epoch [21/25]
+Training loss 196.4273664306379
+Training accuracy 94.375 %
+Testing loss 154.65871658325196
+Testing accuracy 95.54 %
+Epoch [22/25]
+Training loss 184.235600170221
+Training accuracy 94.48166666666667 %
+Testing loss 136.27489166259767
+Testing accuracy 96.07 %
+Epoch [23/25]
+Training loss 186.2162106490202
+Training accuracy 94.41 %
+Testing loss 143.12303886413574
+Testing accuracy 96.05 %
+Epoch [24/25]
+Training loss 185.3644308768642
+Training accuracy 94.42833333333333 %
+Testing loss 156.46469841003417
+Testing accuracy 95.16 %
+Epoch [25/25]
+Training loss 182.94356499512668
+Training accuracy 94.46166666666667 %
+Testing loss 143.34414443969726
+Testing accuracy 96.06 %
+
+Training with num_bases=1, num_flips=3
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 271.7781090077666
+Training accuracy 84.325 %
+Testing loss 140.29971733093262
+Testing accuracy 92.88 %
+Epoch [2/25]
+Training loss 267.31569091517053
+Training accuracy 89.48833333333333 %
+Testing loss 171.4378547668457
+Testing accuracy 93.35 %
+Epoch [3/25]
+Training loss 263.23600302576455
+Training accuracy 90.87833333333333 %
+Testing loss 175.77239723205565
+Testing accuracy 93.28 %
+Epoch [4/25]
+Training loss 251.0119974853739
+Training accuracy 91.83 %
+Testing loss 165.6342929840088
+Testing accuracy 94.57 %
+Epoch [5/25]
+Training loss 241.40012919849482
+Training accuracy 92.395 %
+Testing loss 176.83801803588867
+Testing accuracy 94.43 %
+Epoch [6/25]
+Training loss 235.60455629696594
+Training accuracy 92.86333333333333 %
+Testing loss 161.1765224456787
+Testing accuracy 94.97 %
+Epoch [7/25]
+Training loss 229.3789130791903
+Training accuracy 93.10833333333333 %
+Testing loss 133.7501407623291
+Testing accuracy 95.58 %
+Epoch [8/25]
+Training loss 224.65915432428167
+Training accuracy 93.40333333333334 %
+Testing loss 151.38925323486328
+Testing accuracy 95.47 %
+Epoch [9/25]
+Training loss 220.90570795389365
+Training accuracy 93.48666666666666 %
+Testing loss 155.4034381866455
+Testing accuracy 95.57 %
+Epoch [10/25]
+Training loss 213.86949584718417
+Training accuracy 93.645 %
+Testing loss 164.58698196411132
+Testing accuracy 95.47 %
+Epoch [11/25]
+Training loss 203.74634372131894
+Training accuracy 93.845 %
+Testing loss 156.35231552124023
+Testing accuracy 95.42 %
+Epoch [12/25]
+Training loss 200.9783724860766
+Training accuracy 94.01333333333334 %
+Testing loss 171.62456130981445
+Testing accuracy 95.39 %
+Epoch [13/25]
+Training loss 202.23781119290342
+Training accuracy 94.055 %
+Testing loss 159.3024995803833
+Testing accuracy 95.2 %
+Epoch [14/25]
+Training loss 195.6400723299759
+Training accuracy 94.145 %
+Testing loss 148.1240203857422
+Testing accuracy 95.77 %
+Epoch [15/25]
+Training loss 188.70391198950747
+Training accuracy 94.37666666666667 %
+Testing loss 156.83364429473878
+Testing accuracy 95.79 %
+Epoch [16/25]
+Training loss 200.73566033217884
+Training accuracy 94.315 %
+Testing loss 151.60753135681153
+Testing accuracy 95.95 %
+Epoch [17/25]
+Training loss 189.76197923324852
+Training accuracy 94.495 %
+Testing loss 144.40410118103028
+Testing accuracy 95.87 %
+Epoch [18/25]
+Training loss 194.3575707475651
+Training accuracy 94.38333333333334 %
+Testing loss 157.24052391052246
+Testing accuracy 95.63 %
+Epoch [19/25]
+Training loss 182.7212178544969
+Training accuracy 94.495 %
+Testing loss 150.49615097045898
+Testing accuracy 95.85 %
+Epoch [20/25]
+Training loss 188.0630277149336
+Training accuracy 94.52333333333333 %
+Testing loss 138.33624153137208
+Testing accuracy 95.98 %
+Epoch [21/25]
+Training loss 185.72474567982573
+Training accuracy 94.49333333333334 %
+Testing loss 149.94942741394044
+Testing accuracy 96.18 %
+Epoch [22/25]
+Training loss 180.34999520862755
+Training accuracy 94.545 %
+Testing loss 143.60710601806642
+Testing accuracy 95.75 %
+Epoch [23/25]
+Training loss 179.46706367479464
+Training accuracy 94.54 %
+Testing loss 137.58048667907715
+Testing accuracy 95.9 %
+Epoch [24/25]
+Training loss 176.7445072002862
+Training accuracy 94.625 %
+Testing loss 158.4455654144287
+Testing accuracy 95.76 %
+Epoch [25/25]
+Training loss 180.301097885456
+Training accuracy 94.57666666666667 %
+Testing loss 165.9932056427002
+Testing accuracy 95.74 %
+
+Training with num_bases=1, num_flips=5
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 244.75866789712254
+Training accuracy 84.925 %
+Testing loss 136.6118179321289
+Testing accuracy 92.8 %
+Epoch [2/25]
+Training loss 239.4299737955263
+Training accuracy 90.01166666666667 %
+Testing loss 127.83862571716308
+Testing accuracy 94.34 %
+Epoch [3/25]
+Training loss 228.94052557133833
+Training accuracy 91.50666666666666 %
+Testing loss 119.46608924865723
+Testing accuracy 94.68 %
+Epoch [4/25]
+Training loss 217.2940275921009
+Training accuracy 92.27333333333333 %
+Testing loss 123.17653541564941
+Testing accuracy 95.16 %
+Epoch [5/25]
+Training loss 207.86309323588944
+Training accuracy 92.61833333333334 %
+Testing loss 124.1498348236084
+Testing accuracy 95.23 %
+Epoch [6/25]
+Training loss 199.98353489352266
+Training accuracy 93.09333333333333 %
+Testing loss 115.42577495574952
+Testing accuracy 95.38 %
+Epoch [7/25]
+Training loss 192.3756729258779
+Training accuracy 93.31833333333333 %
+Testing loss 131.15566711425782
+Testing accuracy 95.35 %
+Epoch [8/25]
+Training loss 192.78108635300273
+Training accuracy 93.375 %
+Testing loss 116.84147815704345
+Testing accuracy 95.8 %
+Epoch [9/25]
+Training loss 187.7286571257125
+Training accuracy 93.635 %
+Testing loss 124.74642753601074
+Testing accuracy 95.7 %
+Epoch [10/25]
+Training loss 177.95008543496022
+Training accuracy 93.84833333333333 %
+Testing loss 132.01055221557618
+Testing accuracy 95.2 %
+Epoch [11/25]
+Training loss 180.51383173690235
+Training accuracy 93.77666666666667 %
+Testing loss 120.9169189453125
+Testing accuracy 95.67 %
+Epoch [12/25]
+Training loss 177.06393786392857
+Training accuracy 94.04333333333334 %
+Testing loss 122.17349319458008
+Testing accuracy 95.76 %
+Epoch [13/25]
+Training loss 169.05812224445435
+Training accuracy 94.12666666666667 %
+Testing loss 124.38007221221923
+Testing accuracy 95.64 %
+Epoch [14/25]
+Training loss 171.212521128903
+Training accuracy 94.07333333333334 %
+Testing loss 132.25846214294432
+Testing accuracy 95.47 %
+Epoch [15/25]
+Training loss 166.69174374870272
+Training accuracy 94.265 %
+Testing loss 117.46198177337646
+Testing accuracy 95.76 %
+Epoch [16/25]
+Training loss 167.81339953238964
+Training accuracy 94.19833333333334 %
+Testing loss 110.99276561737061
+Testing accuracy 95.97 %
+Epoch [17/25]
+Training loss 163.33053016650825
+Training accuracy 94.16333333333333 %
+Testing loss 120.35808601379395
+Testing accuracy 95.68 %
+Epoch [18/25]
+Training loss 164.16101446851422
+Training accuracy 94.165 %
+Testing loss 119.70089588165283
+Testing accuracy 95.75 %
+Epoch [19/25]
+Training loss 163.3808594314401
+Training accuracy 94.265 %
+Testing loss 117.65596675872803
+Testing accuracy 95.88 %
+Epoch [20/25]
+Training loss 158.9085165925625
+Training accuracy 94.27833333333334 %
+Testing loss 130.90606613159179
+Testing accuracy 95.73 %
+Epoch [21/25]
+Training loss 161.5044268591415
+Training accuracy 94.195 %
+Testing loss 127.68478012084961
+Testing accuracy 95.61 %
+Epoch [22/25]
+Training loss 156.94968649597416
+Training accuracy 94.21 %
+Testing loss 133.8376823425293
+Testing accuracy 95.5 %
+Epoch [23/25]
+Training loss 160.28537962443625
+Training accuracy 94.09 %
+Testing loss 112.64697284698487
+Testing accuracy 95.78 %
+Epoch [24/25]
+Training loss 146.54079441352985
+Training accuracy 94.41833333333334 %
+Testing loss 118.13219127655029
+Testing accuracy 95.68 %
+Epoch [25/25]
+Training loss 147.16451274597478
+Training accuracy 94.27166666666666 %
+Testing loss 117.76581172943115
+Testing accuracy 95.61 %
+
+Training with num_bases=1, num_flips=10
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 209.4954365550841
+Training accuracy 85.68166666666667 %
+Testing loss 129.85019149780274
+Testing accuracy 91.82 %
+Epoch [2/25]
+Training loss 200.68137281014342
+Training accuracy 90.38833333333334 %
+Testing loss 112.13713150024414
+Testing accuracy 93.73 %
+Epoch [3/25]
+Training loss 181.0101045734142
+Training accuracy 91.62 %
+Testing loss 109.07612495422363
+Testing accuracy 94.64 %
+Epoch [4/25]
+Training loss 177.97008185215023
+Training accuracy 92.33333333333333 %
+Testing loss 128.05953388214112
+Testing accuracy 94.15 %
+Epoch [5/25]
+Training loss 170.42443964486893
+Training accuracy 92.56666666666666 %
+Testing loss 100.08089408874511
+Testing accuracy 94.88 %
+Epoch [6/25]
+Training loss 158.5393267779786
+Training accuracy 92.67833333333333 %
+Testing loss 94.83032875061035
+Testing accuracy 95.02 %
+Epoch [7/25]
+Training loss 152.32581861718214
+Training accuracy 92.69166666666666 %
+Testing loss 98.97410640716552
+Testing accuracy 94.81 %
+Epoch [8/25]
+Training loss 141.91012138269252
+Training accuracy 92.99166666666666 %
+Testing loss 84.7383201599121
+Testing accuracy 94.68 %
+Epoch [9/25]
+Training loss 139.80870992935803
+Training accuracy 92.96 %
+Testing loss 74.70378513336182
+Testing accuracy 95.33 %
+Epoch [10/25]
+Training loss 128.80740033512063
+Training accuracy 92.85333333333334 %
+Testing loss 82.21127796173096
+Testing accuracy 94.66 %
+Epoch [11/25]
+Training loss 119.83663536081762
+Training accuracy 92.5 %
+Testing loss 63.106275177001955
+Testing accuracy 94.65 %
+Epoch [12/25]
+Training loss 107.82833587826327
+Training accuracy 92.05333333333333 %
+Testing loss 57.420728874206546
+Testing accuracy 94.17 %
+Epoch [13/25]
+Training loss 83.57521267791415
+Training accuracy 91.80833333333334 %
+Testing loss 46.823892974853514
+Testing accuracy 93.17 %
+Epoch [14/25]
+Training loss 60.59996049429841
+Training accuracy 91.62 %
+Testing loss 27.360305786132812
+Testing accuracy 94.12 %
+Epoch [15/25]
+Training loss 40.318754940087615
+Training accuracy 92.095 %
+Testing loss 22.492165565490723
+Testing accuracy 94.58 %
+Epoch [16/25]
+Training loss 29.330085649558217
+Training accuracy 93.13833333333334 %
+Testing loss 21.17670269012451
+Testing accuracy 94.09 %
+Epoch [17/25]
+Training loss 22.12140382544829
+Training accuracy 94.05833333333334 %
+Testing loss 16.037000966072082
+Testing accuracy 95.45 %
+Epoch [18/25]
+Training loss 19.166994812667536
+Training accuracy 94.53833333333333 %
+Testing loss 16.444537186622618
+Testing accuracy 95.04 %
+Epoch [19/25]
+Training loss 17.801919194633864
+Training accuracy 95.045 %
+Testing loss 17.44160442352295
+Testing accuracy 94.86 %
+Epoch [20/25]
+Training loss 17.04092186510741
+Training accuracy 95.20166666666667 %
+Testing loss 17.052930879592896
+Testing accuracy 95.26 %
+Epoch [21/25]
+Training loss 17.348435268217305
+Training accuracy 95.39 %
+Testing loss 15.762020111083984
+Testing accuracy 95.9 %
+Epoch [22/25]
+Training loss 16.14450058045033
+Training accuracy 95.75 %
+Testing loss 18.353234338760377
+Testing accuracy 95.62 %
+Epoch [23/25]
+Training loss 16.651740898625327
+Training accuracy 95.87333333333333 %
+Testing loss 15.621515989303589
+Testing accuracy 96.09 %
+Epoch [24/25]
+Training loss 16.5788683652029
+Training accuracy 95.86 %
+Testing loss 16.964680016040802
+Testing accuracy 96.16 %
+Epoch [25/25]
+Training loss 17.721471094067557
+Training accuracy 95.97666666666667 %
+Testing loss 20.182867765426636
+Testing accuracy 95.56 %
+
+Training with num_bases=2, num_flips=1
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 379.3376907012912
+Training accuracy 83.73333333333333 %
+Testing loss 201.1932357788086
+Testing accuracy 92.17 %
+Epoch [2/25]
+Training loss 386.6411978651828
+Training accuracy 88.41333333333333 %
+Testing loss 204.94470138549804
+Testing accuracy 93.48 %
+Epoch [3/25]
+Training loss 383.6662491361678
+Training accuracy 89.58666666666667 %
+Testing loss 237.49837493896484
+Testing accuracy 93.2 %
+Epoch [4/25]
+Training loss 371.76828261383673
+Training accuracy 90.44 %
+Testing loss 272.4001129150391
+Testing accuracy 92.83 %
+Epoch [5/25]
+Training loss 364.9921021287339
+Training accuracy 91.00333333333333 %
+Testing loss 254.8299674987793
+Testing accuracy 93.25 %
+Epoch [6/25]
+Training loss 346.8778609892898
+Training accuracy 91.71666666666667 %
+Testing loss 202.52105178833008
+Testing accuracy 94.75 %
+Epoch [7/25]
+Training loss 328.6880120290713
+Training accuracy 92.09833333333333 %
+Testing loss 226.42436904907225
+Testing accuracy 94.51 %
+Epoch [8/25]
+Training loss 323.72132007598856
+Training accuracy 92.37833333333333 %
+Testing loss 216.66774520874023
+Testing accuracy 94.55 %
+Epoch [9/25]
+Training loss 306.3596081547574
+Training accuracy 92.62 %
+Testing loss 216.37149963378906
+Testing accuracy 94.9 %
+Epoch [10/25]
+Training loss 304.1282790899563
+Training accuracy 92.74 %
+Testing loss 207.8881591796875
+Testing accuracy 94.9 %
+Epoch [11/25]
+Training loss 292.80447054700585
+Training accuracy 93.06166666666667 %
+Testing loss 193.63626518249512
+Testing accuracy 95.35 %
+Epoch [12/25]
+Training loss 275.88123838185726
+Training accuracy 93.31666666666666 %
+Testing loss 209.20728607177733
+Testing accuracy 95.18 %
+Epoch [13/25]
+Training loss 273.60921951506856
+Training accuracy 93.37333333333333 %
+Testing loss 201.30781097412108
+Testing accuracy 95.72 %
+Epoch [14/25]
+Training loss 264.268806074669
+Training accuracy 93.60666666666667 %
+Testing loss 218.67790298461915
+Testing accuracy 95.05 %
+Epoch [15/25]
+Training loss 256.35127971852376
+Training accuracy 93.81 %
+Testing loss 199.5397563934326
+Testing accuracy 95.54 %
+Epoch [16/25]
+Training loss 259.05028919914463
+Training accuracy 93.68166666666667 %
+Testing loss 207.4889923095703
+Testing accuracy 95.31 %
+Epoch [17/25]
+Training loss 250.28359743984538
+Training accuracy 93.90333333333334 %
+Testing loss 177.15482978820802
+Testing accuracy 95.65 %
+Epoch [18/25]
+Training loss 244.58849341706
+Training accuracy 94.09833333333333 %
+Testing loss 181.82526893615722
+Testing accuracy 95.88 %
+Epoch [19/25]
+Training loss 240.67672876267167
+Training accuracy 94.22666666666667 %
+Testing loss 199.374356842041
+Testing accuracy 95.62 %
+Epoch [20/25]
+Training loss 233.74822609496155
+Training accuracy 94.38666666666667 %
+Testing loss 185.69377174377442
+Testing accuracy 96.01 %
+Epoch [21/25]
+Training loss 232.13632825459527
+Training accuracy 94.45666666666666 %
+Testing loss 184.35385551452637
+Testing accuracy 95.67 %
+Epoch [22/25]
+Training loss 225.9160774172932
+Training accuracy 94.47166666666666 %
+Testing loss 175.26947402954102
+Testing accuracy 96.15 %
+Epoch [23/25]
+Training loss 218.55993359543382
+Training accuracy 94.58166666666666 %
+Testing loss 193.33232078552246
+Testing accuracy 95.86 %
+Epoch [24/25]
+Training loss 220.5762555369993
+Training accuracy 94.79333333333334 %
+Testing loss 211.38195991516113
+Testing accuracy 95.8 %
+Epoch [25/25]
+Training loss 212.868304800336
+Training accuracy 94.91 %
+Testing loss 183.28153381347656
+Testing accuracy 96.11 %
+
+Training with num_bases=2, num_flips=2
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 346.34001812837346
+Training accuracy 83.66833333333334 %
+Testing loss 190.26621475219727
+Testing accuracy 92.22 %
+Epoch [2/25]
+Training loss 343.7582498395955
+Training accuracy 88.66833333333334 %
+Testing loss 181.69229965209962
+Testing accuracy 93.28 %
+Epoch [3/25]
+Training loss 332.96131401416983
+Training accuracy 90.02666666666667 %
+Testing loss 190.77409782409669
+Testing accuracy 93.87 %
+Epoch [4/25]
+Training loss 309.6575155867502
+Training accuracy 91.085 %
+Testing loss 172.8538288116455
+Testing accuracy 94.82 %
+Epoch [5/25]
+Training loss 295.1498515236667
+Training accuracy 91.63166666666666 %
+Testing loss 198.10456161499025
+Testing accuracy 94.56 %
+Epoch [6/25]
+Training loss 282.57908094427586
+Training accuracy 92.245 %
+Testing loss 182.0036678314209
+Testing accuracy 94.88 %
+Epoch [7/25]
+Training loss 272.5310577315197
+Training accuracy 92.68333333333334 %
+Testing loss 174.12759666442872
+Testing accuracy 95.13 %
+Epoch [8/25]
+Training loss 253.79340558740043
+Training accuracy 92.94333333333333 %
+Testing loss 181.18504486083984
+Testing accuracy 94.99 %
+Epoch [9/25]
+Training loss 251.02988614205523
+Training accuracy 93.245 %
+Testing loss 184.54351692199708
+Testing accuracy 95.06 %
+Epoch [10/25]
+Training loss 237.69418270981052
+Training accuracy 93.53 %
+Testing loss 163.7605209350586
+Testing accuracy 95.69 %
+Epoch [11/25]
+Training loss 230.56181906732493
+Training accuracy 93.74333333333334 %
+Testing loss 175.8741371154785
+Testing accuracy 95.51 %
+Epoch [12/25]
+Training loss 234.52488795321793
+Training accuracy 93.68833333333333 %
+Testing loss 164.36625442504882
+Testing accuracy 95.63 %
+Epoch [13/25]
+Training loss 216.5806264508711
+Training accuracy 94.09166666666667 %
+Testing loss 161.2442684173584
+Testing accuracy 95.83 %
+Epoch [14/25]
+Training loss 217.65931386558353
+Training accuracy 94.215 %
+Testing loss 163.63262481689452
+Testing accuracy 95.83 %
+Epoch [15/25]
+Training loss 212.06768485489349
+Training accuracy 94.31833333333333 %
+Testing loss 174.5715358734131
+Testing accuracy 95.67 %
+Epoch [16/25]
+Training loss 203.30132242096408
+Training accuracy 94.445 %
+Testing loss 173.6007335662842
+Testing accuracy 95.87 %
+Epoch [17/25]
+Training loss 199.00569625595313
+Training accuracy 94.44166666666666 %
+Testing loss 166.3157501220703
+Testing accuracy 96.02 %
+Epoch [18/25]
+Training loss 196.87872731119015
+Training accuracy 94.57166666666667 %
+Testing loss 161.40497512817382
+Testing accuracy 96.05 %
+Epoch [19/25]
+Training loss 192.89045601742555
+Training accuracy 94.75333333333333 %
+Testing loss 168.20427017211915
+Testing accuracy 95.93 %
+Epoch [20/25]
+Training loss 192.42222286120602
+Training accuracy 94.87833333333333 %
+Testing loss 173.36629371643068
+Testing accuracy 95.91 %
+Epoch [21/25]
+Training loss 189.53083161706206
+Training accuracy 94.925 %
+Testing loss 160.60747985839845
+Testing accuracy 96.06 %
+Epoch [22/25]
+Training loss 185.41664885597106
+Training accuracy 94.98166666666667 %
+Testing loss 171.64483032226562
+Testing accuracy 95.86 %
+Epoch [23/25]
+Training loss 182.69372114300756
+Training accuracy 95.04833333333333 %
+Testing loss 166.98149490356445
+Testing accuracy 96.05 %
+Epoch [24/25]
+Training loss 173.58101396161976
+Training accuracy 95.05333333333333 %
+Testing loss 171.2528911590576
+Testing accuracy 96.06 %
+Epoch [25/25]
+Training loss 178.07576398861048
+Training accuracy 95.15 %
+Testing loss 166.87624320983886
+Testing accuracy 96.0 %
+
+Training with num_bases=2, num_flips=3
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 306.28670038288686
+Training accuracy 84.58 %
+Testing loss 147.73733291625976
+Testing accuracy 93.0 %
+Epoch [2/25]
+Training loss 299.1751700255832
+Training accuracy 89.38333333333334 %
+Testing loss 153.42571792602538
+Testing accuracy 94.23 %
+Epoch [3/25]
+Training loss 278.5674907467474
+Training accuracy 90.96666666666667 %
+Testing loss 180.27146224975587
+Testing accuracy 93.96 %
+Epoch [4/25]
+Training loss 268.67466415083305
+Training accuracy 91.64166666666667 %
+Testing loss 176.20136947631835
+Testing accuracy 94.15 %
+Epoch [5/25]
+Training loss 255.2729051043435
+Training accuracy 92.33 %
+Testing loss 156.49918594360352
+Testing accuracy 94.99 %
+Epoch [6/25]
+Training loss 242.8726408350233
+Training accuracy 92.80333333333333 %
+Testing loss 161.13999519348144
+Testing accuracy 95.37 %
+Epoch [7/25]
+Training loss 230.97892616309213
+Training accuracy 93.13666666666667 %
+Testing loss 166.49857330322266
+Testing accuracy 95.16 %
+Epoch [8/25]
+Training loss 217.72398800492746
+Training accuracy 93.635 %
+Testing loss 147.93498344421386
+Testing accuracy 95.53 %
+Epoch [9/25]
+Training loss 217.3892770825934
+Training accuracy 93.61666666666666 %
+Testing loss 147.28441276550294
+Testing accuracy 95.56 %
+Epoch [10/25]
+Training loss 202.66054807945278
+Training accuracy 94.01333333333334 %
+Testing loss 166.5365982055664
+Testing accuracy 95.48 %
+Epoch [11/25]
+Training loss 210.32686475233754
+Training accuracy 94.00833333333334 %
+Testing loss 147.45160636901855
+Testing accuracy 95.8 %
+Epoch [12/25]
+Training loss 191.246560755287
+Training accuracy 94.345 %
+Testing loss 157.89347953796386
+Testing accuracy 95.72 %
+Epoch [13/25]
+Training loss 188.43366012433333
+Training accuracy 94.47166666666666 %
+Testing loss 144.50032157897948
+Testing accuracy 95.97 %
+Epoch [14/25]
+Training loss 179.85882194466203
+Training accuracy 94.55666666666667 %
+Testing loss 159.844331741333
+Testing accuracy 95.55 %
+Epoch [15/25]
+Training loss 176.82687848170698
+Training accuracy 94.73333333333333 %
+Testing loss 148.3263324737549
+Testing accuracy 95.93 %
+Epoch [16/25]
+Training loss 176.4833812541681
+Training accuracy 94.78666666666666 %
+Testing loss 160.91031227111816
+Testing accuracy 95.76 %
+Epoch [17/25]
+Training loss 173.5508942325762
+Training accuracy 94.94166666666666 %
+Testing loss 147.54358978271483
+Testing accuracy 96.02 %
+Epoch [18/25]
+Training loss 168.24357229432053
+Training accuracy 95.06 %
+Testing loss 153.17035064697265
+Testing accuracy 96.09 %
+Epoch [19/25]
+Training loss 166.85749266339403
+Training accuracy 95.09 %
+Testing loss 153.90242958068848
+Testing accuracy 95.9 %
+Epoch [20/25]
+Training loss 163.19349459727505
+Training accuracy 95.175 %
+Testing loss 142.31911849975586
+Testing accuracy 96.36 %
+Epoch [21/25]
+Training loss 161.60190318330072
+Training accuracy 95.29166666666667 %
+Testing loss 142.44266891479492
+Testing accuracy 96.28 %
+Epoch [22/25]
+Training loss 152.01999087795554
+Training accuracy 95.36 %
+Testing loss 141.77669143676758
+Testing accuracy 96.26 %
+Epoch [23/25]
+Training loss 160.9771432010744
+Training accuracy 95.365 %
+Testing loss 146.92259483337403
+Testing accuracy 96.14 %
+Epoch [24/25]
+Training loss 149.88948373171755
+Training accuracy 95.44333333333333 %
+Testing loss 139.827233505249
+Testing accuracy 96.19 %
+Epoch [25/25]
+Training loss 153.96883463111564
+Training accuracy 95.46 %
+Testing loss 141.39451484680177
+Testing accuracy 96.02 %
+
+Training with num_bases=2, num_flips=5
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 287.97720335620505
+Training accuracy 84.93666666666667 %
+Testing loss 154.27894897460936
+Testing accuracy 92.83 %
+Epoch [2/25]
+Training loss 262.4521115733262
+Training accuracy 90.06 %
+Testing loss 146.87277069091797
+Testing accuracy 94.46 %
+Epoch [3/25]
+Training loss 243.9852765087129
+Training accuracy 91.57833333333333 %
+Testing loss 132.7152256011963
+Testing accuracy 95.06 %
+Epoch [4/25]
+Training loss 222.30073068473675
+Training accuracy 92.45166666666667 %
+Testing loss 132.9415412902832
+Testing accuracy 95.33 %
+Epoch [5/25]
+Training loss 210.57743566439154
+Training accuracy 93.025 %
+Testing loss 128.54761219024658
+Testing accuracy 95.5 %
+Epoch [6/25]
+Training loss 195.21381572394552
+Training accuracy 93.50166666666667 %
+Testing loss 123.39252796173096
+Testing accuracy 95.84 %
+Epoch [7/25]
+Training loss 190.73684395559994
+Training accuracy 93.71833333333333 %
+Testing loss 128.36417465209962
+Testing accuracy 95.7 %
+Epoch [8/25]
+Training loss 176.72222516922554
+Training accuracy 94.20666666666666 %
+Testing loss 136.3059425354004
+Testing accuracy 95.64 %
+Epoch [9/25]
+Training loss 170.87858571747643
+Training accuracy 94.35666666666667 %
+Testing loss 119.79696083068848
+Testing accuracy 96.13 %
+Epoch [10/25]
+Training loss 166.5882116648438
+Training accuracy 94.39833333333333 %
+Testing loss 125.71064643859863
+Testing accuracy 96.05 %
+Epoch [11/25]
+Training loss 161.45097443565217
+Training accuracy 94.45 %
+Testing loss 118.16418895721435
+Testing accuracy 96.15 %
+Epoch [12/25]
+Training loss 153.62401906005297
+Training accuracy 94.77166666666666 %
+Testing loss 129.1413543701172
+Testing accuracy 95.91 %
+Epoch [13/25]
+Training loss 152.9718529655479
+Training accuracy 94.895 %
+Testing loss 112.21464729309082
+Testing accuracy 96.24 %
+Epoch [14/25]
+Training loss 141.42462272880215
+Training accuracy 95.07833333333333 %
+Testing loss 111.3723627090454
+Testing accuracy 96.25 %
+Epoch [15/25]
+Training loss 146.90693992629144
+Training accuracy 95.015 %
+Testing loss 131.371724319458
+Testing accuracy 96.1 %
+Epoch [16/25]
+Training loss 147.49167497362907
+Training accuracy 95.04666666666667 %
+Testing loss 126.6237943649292
+Testing accuracy 95.95 %
+Epoch [17/25]
+Training loss 145.81206956734613
+Training accuracy 95.16 %
+Testing loss 122.40882368087769
+Testing accuracy 96.04 %
+Epoch [18/25]
+Training loss 141.66289134679033
+Training accuracy 95.22166666666666 %
+Testing loss 131.96706447601318
+Testing accuracy 95.97 %
+Epoch [19/25]
+Training loss 134.58204218854925
+Training accuracy 95.36166666666666 %
+Testing loss 145.01266765594482
+Testing accuracy 95.65 %
+Epoch [20/25]
+Training loss 139.0051251337687
+Training accuracy 95.34 %
+Testing loss 132.45449676513672
+Testing accuracy 95.92 %
+Epoch [21/25]
+Training loss 141.06182162788724
+Training accuracy 95.31666666666666 %
+Testing loss 137.3437873840332
+Testing accuracy 95.76 %
+Epoch [22/25]
+Training loss 133.6490887156383
+Training accuracy 95.43833333333333 %
+Testing loss 132.1513641357422
+Testing accuracy 95.95 %
+Epoch [23/25]
+Training loss 133.7071830427911
+Training accuracy 95.48666666666666 %
+Testing loss 134.03234519958497
+Testing accuracy 96.0 %
+Epoch [24/25]
+Training loss 130.04856870185336
+Training accuracy 95.46 %
+Testing loss 121.09589376449586
+Testing accuracy 96.14 %
+Epoch [25/25]
+Training loss 129.96047682024664
+Training accuracy 95.41 %
+Testing loss 122.10163297653199
+Testing accuracy 96.19 %
+
+Training with num_bases=2, num_flips=10
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 249.06972055419416
+Training accuracy 85.04 %
+Testing loss 121.78841552734374
+Testing accuracy 93.08 %
+Epoch [2/25]
+Training loss 205.2855665999359
+Training accuracy 90.30166666666666 %
+Testing loss 111.4277286529541
+Testing accuracy 94.33 %
+Epoch [3/25]
+Training loss 183.7435029506196
+Training accuracy 91.70333333333333 %
+Testing loss 116.84887199401855
+Testing accuracy 94.47 %
+Epoch [4/25]
+Training loss 165.53208763680726
+Training accuracy 92.55666666666667 %
+Testing loss 103.90270652770997
+Testing accuracy 95.08 %
+Epoch [5/25]
+Training loss 152.56236864420865
+Training accuracy 93.02833333333334 %
+Testing loss 95.127317237854
+Testing accuracy 95.21 %
+Epoch [6/25]
+Training loss 139.3158012994852
+Training accuracy 93.385 %
+Testing loss 85.6611988067627
+Testing accuracy 95.4 %
+Epoch [7/25]
+Training loss 131.89967837904626
+Training accuracy 93.505 %
+Testing loss 84.91552677154542
+Testing accuracy 95.17 %
+Epoch [8/25]
+Training loss 128.42129221285634
+Training accuracy 93.52333333333333 %
+Testing loss 81.13400859832764
+Testing accuracy 95.34 %
+Epoch [9/25]
+Training loss 121.79330028052185
+Training accuracy 93.49333333333334 %
+Testing loss 98.45261974334717
+Testing accuracy 94.22 %
+Epoch [10/25]
+Training loss 109.86243735918286
+Training accuracy 93.82333333333334 %
+Testing loss 66.512353515625
+Testing accuracy 95.66 %
+Epoch [11/25]
+Training loss 105.09964116932922
+Training accuracy 93.72 %
+Testing loss 63.7764087677002
+Testing accuracy 95.62 %
+Epoch [12/25]
+Training loss 97.40378410760859
+Training accuracy 93.53333333333333 %
+Testing loss 63.457717418670654
+Testing accuracy 95.02 %
+Epoch [13/25]
+Training loss 87.88097539101082
+Training accuracy 93.56833333333333 %
+Testing loss 50.56573123931885
+Testing accuracy 95.34 %
+Epoch [14/25]
+Training loss 76.9430491456003
+Training accuracy 93.345 %
+Testing loss 42.77015047073364
+Testing accuracy 95.07 %
+Epoch [15/25]
+Training loss 67.46669689243791
+Training accuracy 93.19166666666666 %
+Testing loss 40.51655907630921
+Testing accuracy 94.89 %
+Epoch [16/25]
+Training loss 51.33679373350013
+Training accuracy 93.43166666666667 %
+Testing loss 32.033900547027585
+Testing accuracy 94.81 %
+Epoch [17/25]
+Training loss 39.852583287067155
+Training accuracy 93.65666666666667 %
+Testing loss 24.393442964553834
+Testing accuracy 95.1 %
+Epoch [18/25]
+Training loss 30.287359515059677
+Training accuracy 94.12833333333333 %
+Testing loss 19.69110746383667
+Testing accuracy 95.42 %
+Epoch [19/25]
+Training loss 24.376244054786827
+Training accuracy 94.675 %
+Testing loss 18.764056539535524
+Testing accuracy 95.16 %
+Epoch [20/25]
+Training loss 20.6788811316236
+Training accuracy 95.07 %
+Testing loss 18.433889389038086
+Testing accuracy 95.5 %
+Epoch [21/25]
+Training loss 17.632631515030127
+Training accuracy 95.55666666666667 %
+Testing loss 16.485898160934447
+Testing accuracy 95.53 %
+Epoch [22/25]
+Training loss 15.186182406855668
+Training accuracy 95.945 %
+Testing loss 16.25385465621948
+Testing accuracy 95.77 %
+Epoch [23/25]
+Training loss 14.717654077708021
+Training accuracy 96.20666666666666 %
+Testing loss 17.014258289337157
+Testing accuracy 95.8 %
+Epoch [24/25]
+Training loss 13.42877610226575
+Training accuracy 96.44666666666667 %
+Testing loss 17.973826503753664
+Testing accuracy 95.63 %
+Epoch [25/25]
+Training loss 12.414049753059551
+Training accuracy 96.67 %
+Testing loss 18.3007022857666
+Testing accuracy 95.63 %
+
+Training with num_bases=3, num_flips=1
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 390.97323870217383
+Training accuracy 83.84833333333333 %
+Testing loss 256.3963195800781
+Testing accuracy 90.79 %
+Epoch [2/25]
+Training loss 407.1453978389343
+Training accuracy 88.22666666666667 %
+Testing loss 254.37283096313476
+Testing accuracy 92.72 %
+Epoch [3/25]
+Training loss 389.51073312620196
+Training accuracy 89.77333333333333 %
+Testing loss 343.45264892578126
+Testing accuracy 90.72 %
+Epoch [4/25]
+Training loss 392.8005470892866
+Training accuracy 90.29666666666667 %
+Testing loss 208.4410385131836
+Testing accuracy 94.24 %
+Epoch [5/25]
+Training loss 379.33642527163204
+Training accuracy 90.93833333333333 %
+Testing loss 224.03270416259767
+Testing accuracy 94.51 %
+Epoch [6/25]
+Training loss 360.5293041894469
+Training accuracy 91.45333333333333 %
+Testing loss 199.8305435180664
+Testing accuracy 94.69 %
+Epoch [7/25]
+Training loss 345.0331417402056
+Training accuracy 91.88333333333334 %
+Testing loss 236.2416847229004
+Testing accuracy 94.47 %
+Epoch [8/25]
+Training loss 340.45508400662413
+Training accuracy 92.215 %
+Testing loss 217.56208038330078
+Testing accuracy 94.93 %
+Epoch [9/25]
+Training loss 335.1512664708692
+Training accuracy 92.46166666666667 %
+Testing loss 227.8306209564209
+Testing accuracy 94.6 %
+Epoch [10/25]
+Training loss 317.51683665085955
+Training accuracy 92.74166666666666 %
+Testing loss 216.6062973022461
+Testing accuracy 94.93 %
+Epoch [11/25]
+Training loss 307.61429347245087
+Training accuracy 93.03833333333333 %
+Testing loss 198.92993125915527
+Testing accuracy 95.11 %
+Epoch [12/25]
+Training loss 301.31041685502777
+Training accuracy 93.07333333333334 %
+Testing loss 188.14725799560546
+Testing accuracy 95.68 %
+Epoch [13/25]
+Training loss 295.3673712163989
+Training accuracy 93.26 %
+Testing loss 240.84677505493164
+Testing accuracy 94.78 %
+Epoch [14/25]
+Training loss 281.1213606445781
+Training accuracy 93.47166666666666 %
+Testing loss 212.89276428222655
+Testing accuracy 95.34 %
+Epoch [15/25]
+Training loss 273.4540838400036
+Training accuracy 93.74166666666666 %
+Testing loss 210.0970485687256
+Testing accuracy 95.42 %
+Epoch [16/25]
+Training loss 279.1173289417793
+Training accuracy 93.78333333333333 %
+Testing loss 226.48295822143555
+Testing accuracy 95.21 %
+Epoch [17/25]
+Training loss 265.53651139202884
+Training accuracy 93.84666666666666 %
+Testing loss 186.85831298828126
+Testing accuracy 95.9 %
+Epoch [18/25]
+Training loss 260.25189254714996
+Training accuracy 94.01333333333334 %
+Testing loss 176.7499137878418
+Testing accuracy 95.94 %
+Epoch [19/25]
+Training loss 259.1711753633585
+Training accuracy 94.04833333333333 %
+Testing loss 183.44583282470703
+Testing accuracy 95.94 %
+Epoch [20/25]
+Training loss 247.3623522156664
+Training accuracy 94.3 %
+Testing loss 204.79933395385743
+Testing accuracy 95.53 %
+Epoch [21/25]
+Training loss 248.16230560201728
+Training accuracy 94.35666666666667 %
+Testing loss 203.22826118469237
+Testing accuracy 95.4 %
+Epoch [22/25]
+Training loss 236.41729301948035
+Training accuracy 94.52833333333334 %
+Testing loss 185.79139862060546
+Testing accuracy 95.86 %
+Epoch [23/25]
+Training loss 237.12062473963525
+Training accuracy 94.455 %
+Testing loss 180.85055541992188
+Testing accuracy 95.9 %
+Epoch [24/25]
+Training loss 225.27854344638214
+Training accuracy 94.70166666666667 %
+Testing loss 204.19189338684083
+Testing accuracy 95.98 %
+Epoch [25/25]
+Training loss 227.4887469831863
+Training accuracy 94.58166666666666 %
+Testing loss 187.94358444213867
+Testing accuracy 96.07 %
+
+Training with num_bases=3, num_flips=2
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 348.2846254722901
+Training accuracy 84.01666666666667 %
+Testing loss 313.12589569091796
+Testing accuracy 89.67 %
+Epoch [2/25]
+Training loss 359.96435374012293
+Training accuracy 88.73833333333333 %
+Testing loss 185.259765625
+Testing accuracy 93.71 %
+Epoch [3/25]
+Training loss 334.53193002777397
+Training accuracy 90.27166666666666 %
+Testing loss 221.09237518310547
+Testing accuracy 93.47 %
+Epoch [4/25]
+Training loss 320.0757177661351
+Training accuracy 91.01 %
+Testing loss 226.9941719055176
+Testing accuracy 93.77 %
+Epoch [5/25]
+Training loss 302.6260494648792
+Training accuracy 91.75833333333334 %
+Testing loss 196.32654418945313
+Testing accuracy 94.36 %
+Epoch [6/25]
+Training loss 289.83133897319954
+Training accuracy 92.205 %
+Testing loss 211.0673728942871
+Testing accuracy 94.55 %
+Epoch [7/25]
+Training loss 275.914663490867
+Training accuracy 92.70666666666666 %
+Testing loss 191.9315101623535
+Testing accuracy 95.45 %
+Epoch [8/25]
+Training loss 261.16992782538455
+Training accuracy 93.00333333333333 %
+Testing loss 191.64093246459962
+Testing accuracy 95.14 %
+Epoch [9/25]
+Training loss 259.16127192060065
+Training accuracy 93.28166666666667 %
+Testing loss 190.28466873168946
+Testing accuracy 95.36 %
+Epoch [10/25]
+Training loss 243.15404406532596
+Training accuracy 93.53 %
+Testing loss 162.2329132080078
+Testing accuracy 95.85 %
+Epoch [11/25]
+Training loss 238.1489796515316
+Training accuracy 93.77166666666666 %
+Testing loss 178.06197547912598
+Testing accuracy 95.45 %
+Epoch [12/25]
+Training loss 230.77921765516277
+Training accuracy 93.97333333333333 %
+Testing loss 172.7814743041992
+Testing accuracy 95.71 %
+Epoch [13/25]
+Training loss 227.5340244025816
+Training accuracy 94.02333333333333 %
+Testing loss 163.8470001220703
+Testing accuracy 95.86 %
+Epoch [14/25]
+Training loss 218.08319409193405
+Training accuracy 94.23666666666666 %
+Testing loss 169.32215995788573
+Testing accuracy 95.84 %
+Epoch [15/25]
+Training loss 208.46330118971318
+Training accuracy 94.43333333333334 %
+Testing loss 168.31039390563964
+Testing accuracy 95.83 %
+Epoch [16/25]
+Training loss 207.79161548235086
+Training accuracy 94.54166666666667 %
+Testing loss 174.769295501709
+Testing accuracy 95.79 %
+Epoch [17/25]
+Training loss 193.71955237423964
+Training accuracy 94.75666666666666 %
+Testing loss 173.4092052459717
+Testing accuracy 96.19 %
+Epoch [18/25]
+Training loss 197.94830079280214
+Training accuracy 94.79666666666667 %
+Testing loss 171.38291759490966
+Testing accuracy 95.99 %
+Epoch [19/25]
+Training loss 188.70069899148916
+Training accuracy 94.89333333333333 %
+Testing loss 166.92544555664062
+Testing accuracy 96.13 %
+Epoch [20/25]
+Training loss 184.09735776216635
+Training accuracy 95.00333333333333 %
+Testing loss 171.8062858581543
+Testing accuracy 96.07 %
+Epoch [21/25]
+Training loss 185.24113801712792
+Training accuracy 95.125 %
+Testing loss 166.61740112304688
+Testing accuracy 96.27 %
+Epoch [22/25]
+Training loss 183.59406695615246
+Training accuracy 95.13166666666666 %
+Testing loss 170.98759117126465
+Testing accuracy 96.15 %
+Epoch [23/25]
+Training loss 173.28723048816335
+Training accuracy 95.17166666666667 %
+Testing loss 164.46861763000487
+Testing accuracy 96.09 %
+Epoch [24/25]
+Training loss 177.42629366083798
+Training accuracy 95.235 %
+Testing loss 147.29501399993896
+Testing accuracy 96.4 %
+Epoch [25/25]
+Training loss 165.33993031473346
+Training accuracy 95.53 %
+Testing loss 171.17903213500978
+Testing accuracy 96.28 %
+
+Training with num_bases=3, num_flips=3
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 338.747640778237
+Training accuracy 84.41666666666667 %
+Testing loss 183.19603424072267
+Testing accuracy 92.21 %
+Epoch [2/25]
+Training loss 324.900990761675
+Training accuracy 89.395 %
+Testing loss 192.18367462158204
+Testing accuracy 93.54 %
+Epoch [3/25]
+Training loss 314.8492093943587
+Training accuracy 90.62 %
+Testing loss 192.1645820617676
+Testing accuracy 94.53 %
+Epoch [4/25]
+Training loss 288.6670105475235
+Training accuracy 91.72833333333334 %
+Testing loss 180.53304595947264
+Testing accuracy 94.67 %
+Epoch [5/25]
+Training loss 278.5694549000005
+Training accuracy 92.29666666666667 %
+Testing loss 182.32306442260742
+Testing accuracy 95.14 %
+Epoch [6/25]
+Training loss 257.1268385186512
+Training accuracy 93.03833333333333 %
+Testing loss 186.0544006347656
+Testing accuracy 95.13 %
+Epoch [7/25]
+Training loss 245.0676532278976
+Training accuracy 93.24166666666666 %
+Testing loss 153.32758712768555
+Testing accuracy 95.74 %
+Epoch [8/25]
+Training loss 238.6845221669593
+Training accuracy 93.50666666666666 %
+Testing loss 170.75738983154298
+Testing accuracy 95.53 %
+Epoch [9/25]
+Training loss 217.6205409780542
+Training accuracy 93.97333333333333 %
+Testing loss 180.757820892334
+Testing accuracy 95.59 %
+Epoch [10/25]
+Training loss 210.7007005025293
+Training accuracy 94.23333333333333 %
+Testing loss 155.67794342041014
+Testing accuracy 96.06 %
+Epoch [11/25]
+Training loss 207.0612599662345
+Training accuracy 94.415 %
+Testing loss 163.3095989227295
+Testing accuracy 95.92 %
+Epoch [12/25]
+Training loss 202.4273082852962
+Training accuracy 94.40666666666667 %
+Testing loss 207.08329849243165
+Testing accuracy 94.98 %
+Epoch [13/25]
+Training loss 192.3079761622371
+Training accuracy 94.68 %
+Testing loss 148.58928871154785
+Testing accuracy 96.27 %
+Epoch [14/25]
+Training loss 179.19305452637698
+Training accuracy 94.955 %
+Testing loss 183.2294406890869
+Testing accuracy 95.87 %
+Epoch [15/25]
+Training loss 182.9724370153903
+Training accuracy 94.98 %
+Testing loss 177.86700172424315
+Testing accuracy 95.98 %
+Epoch [16/25]
+Training loss 178.78701514750827
+Training accuracy 95.07333333333334 %
+Testing loss 158.7784896850586
+Testing accuracy 96.06 %
+Epoch [17/25]
+Training loss 169.06197967480372
+Training accuracy 95.23666666666666 %
+Testing loss 174.67538604736328
+Testing accuracy 95.91 %
+Epoch [18/25]
+Training loss 162.56276715910565
+Training accuracy 95.32333333333334 %
+Testing loss 166.38800239562988
+Testing accuracy 96.09 %
+Epoch [19/25]
+Training loss 163.28623443904104
+Training accuracy 95.44666666666667 %
+Testing loss 149.42938613891602
+Testing accuracy 96.54 %
+Epoch [20/25]
+Training loss 161.11845708145728
+Training accuracy 95.54 %
+Testing loss 152.53568496704102
+Testing accuracy 96.25 %
+Epoch [21/25]
+Training loss 157.78827746471617
+Training accuracy 95.635 %
+Testing loss 149.75983200073242
+Testing accuracy 96.35 %
+Epoch [22/25]
+Training loss 156.8067142861318
+Training accuracy 95.57166666666667 %
+Testing loss 163.88062057495117
+Testing accuracy 96.38 %
+Epoch [23/25]
+Training loss 156.02127317769626
+Training accuracy 95.59666666666666 %
+Testing loss 166.96269683837892
+Testing accuracy 96.38 %
+Epoch [24/25]
+Training loss 143.47018531824946
+Training accuracy 95.905 %
+Testing loss 164.55492134094237
+Testing accuracy 96.45 %
+Epoch [25/25]
+Training loss 146.52327916486385
+Training accuracy 95.84833333333333 %
+Testing loss 166.18468742370607
+Testing accuracy 96.44 %
+
+Training with num_bases=3, num_flips=5
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 326.1431182480421
+Training accuracy 84.775 %
+Testing loss 195.45346145629884
+Testing accuracy 91.44 %
+Epoch [2/25]
+Training loss 290.0275093281814
+Training accuracy 89.755 %
+Testing loss 166.0260383605957
+Testing accuracy 93.88 %
+Epoch [3/25]
+Training loss 273.1129352218194
+Training accuracy 91.325 %
+Testing loss 163.5288921356201
+Testing accuracy 94.38 %
+Epoch [4/25]
+Training loss 248.4449728449291
+Training accuracy 92.245 %
+Testing loss 136.16979541778565
+Testing accuracy 94.78 %
+Epoch [5/25]
+Training loss 232.0957902217487
+Training accuracy 92.81666666666666 %
+Testing loss 139.67718238830565
+Testing accuracy 95.16 %
+Epoch [6/25]
+Training loss 215.64384261731382
+Training accuracy 93.305 %
+Testing loss 137.60247077941895
+Testing accuracy 95.66 %
+Epoch [7/25]
+Training loss 195.3774149782333
+Training accuracy 93.71666666666667 %
+Testing loss 119.70432224273682
+Testing accuracy 96.17 %
+Epoch [8/25]
+Training loss 182.41145777751163
+Training accuracy 94.06333333333333 %
+Testing loss 134.61132411956788
+Testing accuracy 95.86 %
+Epoch [9/25]
+Training loss 177.9352007081875
+Training accuracy 94.40833333333333 %
+Testing loss 127.53105697631835
+Testing accuracy 96.09 %
+Epoch [10/25]
+Training loss 172.7542090660536
+Training accuracy 94.46333333333334 %
+Testing loss 145.65162162780763
+Testing accuracy 96.16 %
+Epoch [11/25]
+Training loss 162.99143018830773
+Training accuracy 94.76666666666667 %
+Testing loss 138.23662586212157
+Testing accuracy 96.04 %
+Epoch [12/25]
+Training loss 155.8161029852216
+Training accuracy 94.96166666666667 %
+Testing loss 119.93483028411865
+Testing accuracy 96.49 %
+Epoch [13/25]
+Training loss 158.68189943297418
+Training accuracy 94.96 %
+Testing loss 132.00787515640258
+Testing accuracy 96.34 %
+Epoch [14/25]
+Training loss 146.87709147949968
+Training accuracy 95.24 %
+Testing loss 142.26237030029296
+Testing accuracy 95.91 %
+Epoch [15/25]
+Training loss 145.4609877514222
+Training accuracy 95.30666666666667 %
+Testing loss 131.6197780609131
+Testing accuracy 96.15 %
+Epoch [16/25]
+Training loss 143.579068161476
+Training accuracy 95.325 %
+Testing loss 124.16638126373292
+Testing accuracy 96.49 %
+Epoch [17/25]
+Training loss 140.95832678460295
+Training accuracy 95.41333333333333 %
+Testing loss 130.6604513168335
+Testing accuracy 96.24 %
+Epoch [18/25]
+Training loss 138.05726430132154
+Training accuracy 95.47 %
+Testing loss 127.53284072875977
+Testing accuracy 96.23 %
+Epoch [19/25]
+Training loss 136.80501724510964
+Training accuracy 95.45833333333333 %
+Testing loss 135.88539438247682
+Testing accuracy 96.35 %
+Epoch [20/25]
+Training loss 128.11130789262089
+Training accuracy 95.7 %
+Testing loss 133.60438613891603
+Testing accuracy 96.4 %
+Epoch [21/25]
+Training loss 130.16500408600172
+Training accuracy 95.755 %
+Testing loss 127.81636638641358
+Testing accuracy 96.42 %
+Epoch [22/25]
+Training loss 129.68322143059436
+Training accuracy 95.77166666666666 %
+Testing loss 135.65989017486572
+Testing accuracy 96.26 %
+Epoch [23/25]
+Training loss 124.22436769303398
+Training accuracy 95.83166666666666 %
+Testing loss 136.84294929504395
+Testing accuracy 96.23 %
+Epoch [24/25]
+Training loss 122.17388652863342
+Training accuracy 95.9 %
+Testing loss 118.03223276138306
+Testing accuracy 96.63 %
+Epoch [25/25]
+Training loss 124.73705705083773
+Training accuracy 95.85 %
+Testing loss 127.12615041732788
+Testing accuracy 96.41 %
+
+Training with num_bases=3, num_flips=10
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 272.94643791138094
+Training accuracy 85.38 %
+Testing loss 138.9575080871582
+Testing accuracy 93.02 %
+Epoch [2/25]
+Training loss 223.63245156035273
+Training accuracy 90.50333333333333 %
+Testing loss 130.8825710296631
+Testing accuracy 93.89 %
+Epoch [3/25]
+Training loss 201.4587819708513
+Training accuracy 91.94833333333334 %
+Testing loss 107.45150394439698
+Testing accuracy 95.34 %
+Epoch [4/25]
+Training loss 177.68221326090935
+Training accuracy 92.72 %
+Testing loss 116.53137588500977
+Testing accuracy 95.02 %
+Epoch [5/25]
+Training loss 165.9295007087248
+Training accuracy 93.405 %
+Testing loss 111.18918399810791
+Testing accuracy 95.37 %
+Epoch [6/25]
+Training loss 146.25047696721364
+Training accuracy 93.89166666666667 %
+Testing loss 112.58422679901123
+Testing accuracy 95.59 %
+Epoch [7/25]
+Training loss 140.02829401267243
+Training accuracy 94.10166666666667 %
+Testing loss 103.51412601470948
+Testing accuracy 95.74 %
+Epoch [8/25]
+Training loss 135.44007599627236
+Training accuracy 94.36666666666666 %
+Testing loss 89.4310203552246
+Testing accuracy 95.89 %
+Epoch [9/25]
+Training loss 126.64962732685076
+Training accuracy 94.49166666666666 %
+Testing loss 91.11449127197265
+Testing accuracy 96.05 %
+Epoch [10/25]
+Training loss 119.83330338339968
+Training accuracy 94.695 %
+Testing loss 97.55471382141113
+Testing accuracy 95.71 %
+Epoch [11/25]
+Training loss 114.0350580901275
+Training accuracy 94.77333333333333 %
+Testing loss 86.65917100906373
+Testing accuracy 95.81 %
+Epoch [12/25]
+Training loss 110.65355398450583
+Training accuracy 94.68666666666667 %
+Testing loss 91.83782501220703
+Testing accuracy 95.87 %
+Epoch [13/25]
+Training loss 106.5158621316661
+Training accuracy 94.79166666666667 %
+Testing loss 76.67479753494263
+Testing accuracy 96.01 %
+Epoch [14/25]
+Training loss 103.45384412584535
+Training accuracy 94.94833333333334 %
+Testing loss 84.54559211730957
+Testing accuracy 96.05 %
+Epoch [15/25]
+Training loss 99.68376552760147
+Training accuracy 95.12833333333333 %
+Testing loss 78.63050174713135
+Testing accuracy 95.89 %
+Epoch [16/25]
+Training loss 99.55161288522402
+Training accuracy 94.9 %
+Testing loss 73.40196666717529
+Testing accuracy 96.15 %
+Epoch [17/25]
+Training loss 93.03141888992434
+Training accuracy 94.975 %
+Testing loss 77.1048363685608
+Testing accuracy 96.01 %
+Epoch [18/25]
+Training loss 89.79467150551376
+Training accuracy 95.05833333333334 %
+Testing loss 65.86273469924927
+Testing accuracy 96.14 %
+Epoch [19/25]
+Training loss 86.70990361771928
+Training accuracy 94.97833333333334 %
+Testing loss 72.06653146743774
+Testing accuracy 95.73 %
+Epoch [20/25]
+Training loss 84.35952628969109
+Training accuracy 94.955 %
+Testing loss 64.29785633087158
+Testing accuracy 96.08 %
+Epoch [21/25]
+Training loss 81.98834535223848
+Training accuracy 94.79833333333333 %
+Testing loss 57.93543481826782
+Testing accuracy 95.87 %
+Epoch [22/25]
+Training loss 74.7133543100681
+Training accuracy 94.82166666666667 %
+Testing loss 55.88570728302002
+Testing accuracy 95.92 %
+Epoch [23/25]
+Training loss 68.9064532450318
+Training accuracy 94.63666666666667 %
+Testing loss 50.51792230606079
+Testing accuracy 95.65 %
+Epoch [24/25]
+Training loss 64.21997297734414
+Training accuracy 94.57333333333334 %
+Testing loss 48.658704090118405
+Testing accuracy 95.14 %
+Epoch [25/25]
+Training loss 55.89512529022006
+Training accuracy 94.555 %
+Testing loss 43.380274295806885
+Testing accuracy 94.92 %
+
+Training with num_bases=5, num_flips=1
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 417.1608877177034
+Training accuracy 83.68333333333334 %
+Testing loss 277.2270736694336
+Testing accuracy 90.76 %
+Epoch [2/25]
+Training loss 432.77035033940837
+Training accuracy 88.27 %
+Testing loss 285.3290252685547
+Testing accuracy 92.39 %
+Epoch [3/25]
+Training loss 426.0374060146
+Training accuracy 89.65 %
+Testing loss 269.75769271850584
+Testing accuracy 93.63 %
+Epoch [4/25]
+Training loss 425.0635263835629
+Training accuracy 90.305 %
+Testing loss 229.9956298828125
+Testing accuracy 94.18 %
+Epoch [5/25]
+Training loss 412.2380890162677
+Training accuracy 90.87666666666667 %
+Testing loss 246.84870681762695
+Testing accuracy 94.03 %
+Epoch [6/25]
+Training loss 393.616201685469
+Training accuracy 91.39 %
+Testing loss 258.49507369995115
+Testing accuracy 94.06 %
+Epoch [7/25]
+Training loss 379.95160976194853
+Training accuracy 91.69166666666666 %
+Testing loss 227.58952598571778
+Testing accuracy 94.84 %
+Epoch [8/25]
+Training loss 364.7952173290501
+Training accuracy 92.19166666666666 %
+Testing loss 231.91200103759766
+Testing accuracy 94.66 %
+Epoch [9/25]
+Training loss 350.0353322283661
+Training accuracy 92.38666666666667 %
+Testing loss 208.13457565307618
+Testing accuracy 94.99 %
+Epoch [10/25]
+Training loss 344.2033062576688
+Training accuracy 92.54666666666667 %
+Testing loss 218.33026199340821
+Testing accuracy 95.16 %
+Epoch [11/25]
+Training loss 334.6191673327482
+Training accuracy 92.70833333333333 %
+Testing loss 227.33149795532228
+Testing accuracy 95.19 %
+Epoch [12/25]
+Training loss 325.10289279724225
+Training accuracy 92.89333333333333 %
+Testing loss 224.92989959716797
+Testing accuracy 95.37 %
+Epoch [13/25]
+Training loss 318.79860701347917
+Training accuracy 93.09333333333333 %
+Testing loss 230.65644760131835
+Testing accuracy 95.07 %
+Epoch [14/25]
+Training loss 309.03969063959477
+Training accuracy 93.12833333333333 %
+Testing loss 197.87591361999512
+Testing accuracy 95.93 %
+Epoch [15/25]
+Training loss 301.2135772685707
+Training accuracy 93.33 %
+Testing loss 212.84103393554688
+Testing accuracy 95.84 %
+Epoch [16/25]
+Training loss 295.9665117967974
+Training accuracy 93.60666666666667 %
+Testing loss 218.66932678222656
+Testing accuracy 95.42 %
+Epoch [17/25]
+Training loss 298.90386570850046
+Training accuracy 93.57833333333333 %
+Testing loss 203.32240028381347
+Testing accuracy 95.5 %
+Epoch [18/25]
+Training loss 284.9892760315767
+Training accuracy 93.82833333333333 %
+Testing loss 183.53423194885255
+Testing accuracy 95.97 %
+Epoch [19/25]
+Training loss 267.8451083320121
+Training accuracy 94.06666666666666 %
+Testing loss 246.01496353149415
+Testing accuracy 94.93 %
+Epoch [20/25]
+Training loss 271.4194432605318
+Training accuracy 94.02333333333333 %
+Testing loss 213.03581314086915
+Testing accuracy 95.78 %
+Epoch [21/25]
+Training loss 261.7777678506872
+Training accuracy 94.22666666666667 %
+Testing loss 211.43686752319337
+Testing accuracy 95.81 %
+Epoch [22/25]
+Training loss 267.9391604193743
+Training accuracy 94.14333333333333 %
+Testing loss 216.17465515136718
+Testing accuracy 95.66 %
+Epoch [23/25]
+Training loss 251.1410052863304
+Training accuracy 94.41333333333333 %
+Testing loss 185.17688369750977
+Testing accuracy 96.2 %
+Epoch [24/25]
+Training loss 255.98608733740866
+Training accuracy 94.35666666666667 %
+Testing loss 224.96080856323243
+Testing accuracy 95.7 %
+Epoch [25/25]
+Training loss 247.63341049848
+Training accuracy 94.445 %
+Testing loss 192.47772598266602
+Testing accuracy 96.15 %
+
+Training with num_bases=5, num_flips=2
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 398.6451831147239
+Training accuracy 83.94 %
+Testing loss 226.9997528076172
+Testing accuracy 92.11 %
+Epoch [2/25]
+Training loss 413.35215693118397
+Training accuracy 88.67333333333333 %
+Testing loss 454.6547592163086
+Testing accuracy 88.94 %
+Epoch [3/25]
+Training loss 381.5946449097134
+Training accuracy 90.175 %
+Testing loss 228.11828002929687
+Testing accuracy 93.7 %
+Epoch [4/25]
+Training loss 365.66850652985335
+Training accuracy 90.99333333333334 %
+Testing loss 209.15237045288086
+Testing accuracy 94.47 %
+Epoch [5/25]
+Training loss 354.692244032381
+Training accuracy 91.42666666666666 %
+Testing loss 233.4951400756836
+Testing accuracy 94.13 %
+Epoch [6/25]
+Training loss 331.5141101840874
+Training accuracy 92.015 %
+Testing loss 204.9821678161621
+Testing accuracy 94.91 %
+Epoch [7/25]
+Training loss 315.148626259315
+Training accuracy 92.49333333333334 %
+Testing loss 194.21054229736328
+Testing accuracy 95.5 %
+Epoch [8/25]
+Training loss 309.14570939734625
+Training accuracy 92.88333333333334 %
+Testing loss 215.32623062133788
+Testing accuracy 95.11 %
+Epoch [9/25]
+Training loss 291.5785814810245
+Training accuracy 93.17666666666666 %
+Testing loss 196.89568862915038
+Testing accuracy 95.6 %
+Epoch [10/25]
+Training loss 277.31452474743105
+Training accuracy 93.42333333333333 %
+Testing loss 195.0331832885742
+Testing accuracy 95.7 %
+Epoch [11/25]
+Training loss 264.37903129278754
+Training accuracy 93.79833333333333 %
+Testing loss 205.21124992370605
+Testing accuracy 95.36 %
+Epoch [12/25]
+Training loss 263.47426049720076
+Training accuracy 93.81 %
+Testing loss 198.09520263671874
+Testing accuracy 95.54 %
+Epoch [13/25]
+Training loss 254.16213286723237
+Training accuracy 93.94833333333334 %
+Testing loss 207.27671966552734
+Testing accuracy 95.42 %
+Epoch [14/25]
+Training loss 235.863110641421
+Training accuracy 94.255 %
+Testing loss 197.134597492218
+Testing accuracy 95.61 %
+Epoch [15/25]
+Training loss 232.6584934190924
+Training accuracy 94.35833333333333 %
+Testing loss 218.81023254394532
+Testing accuracy 95.3 %
+Epoch [16/25]
+Training loss 228.24459939612646
+Training accuracy 94.54 %
+Testing loss 196.78916244506837
+Testing accuracy 95.6 %
+Epoch [17/25]
+Training loss 221.07239502829214
+Training accuracy 94.67166666666667 %
+Testing loss 188.7513656616211
+Testing accuracy 96.02 %
+Epoch [18/25]
+Training loss 216.5129138334259
+Training accuracy 94.70833333333333 %
+Testing loss 175.43047943115235
+Testing accuracy 96.04 %
+Epoch [19/25]
+Training loss 208.46797399602426
+Training accuracy 94.94333333333333 %
+Testing loss 173.7404697418213
+Testing accuracy 96.24 %
+Epoch [20/25]
+Training loss 202.39696620618776
+Training accuracy 94.85333333333334 %
+Testing loss 188.08629722595214
+Testing accuracy 95.81 %
+Epoch [21/25]
+Training loss 204.67993551564504
+Training accuracy 95.02166666666666 %
+Testing loss 185.73517875671388
+Testing accuracy 96.28 %
+Epoch [22/25]
+Training loss 193.48370497558332
+Training accuracy 95.28833333333333 %
+Testing loss 172.68692607879638
+Testing accuracy 96.43 %
+Epoch [23/25]
+Training loss 188.59153610446535
+Training accuracy 95.315 %
+Testing loss 164.41593704223632
+Testing accuracy 96.51 %
+Epoch [24/25]
+Training loss 185.83549518591357
+Training accuracy 95.52833333333334 %
+Testing loss 172.05708770751954
+Testing accuracy 96.25 %
+Epoch [25/25]
+Training loss 191.61268004821935
+Training accuracy 95.365 %
+Testing loss 162.0463836669922
+Testing accuracy 96.47 %
+
+Training with num_bases=5, num_flips=3
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 386.80566694223074
+Training accuracy 84.09333333333333 %
+Testing loss 207.28033752441405
+Testing accuracy 92.41 %
+Epoch [2/25]
+Training loss 368.2119704426585
+Training accuracy 89.015 %
+Testing loss 189.5556270599365
+Testing accuracy 94.02 %
+Epoch [3/25]
+Training loss 345.655853749293
+Training accuracy 90.47333333333333 %
+Testing loss 212.7042621612549
+Testing accuracy 94.17 %
+Epoch [4/25]
+Training loss 321.0542633071691
+Training accuracy 91.40333333333334 %
+Testing loss 194.63840408325194
+Testing accuracy 94.85 %
+Epoch [5/25]
+Training loss 306.1521632528981
+Training accuracy 92.08 %
+Testing loss 204.47303352355956
+Testing accuracy 94.68 %
+Epoch [6/25]
+Training loss 289.47786307044487
+Training accuracy 92.4 %
+Testing loss 182.2513172149658
+Testing accuracy 95.32 %
+Epoch [7/25]
+Training loss 272.7165129620177
+Training accuracy 92.98 %
+Testing loss 177.94281692504882
+Testing accuracy 95.54 %
+Epoch [8/25]
+Training loss 259.67844014525974
+Training accuracy 93.27833333333334 %
+Testing loss 212.49905548095703
+Testing accuracy 94.63 %
+Epoch [9/25]
+Training loss 245.94523103973555
+Training accuracy 93.655 %
+Testing loss 160.67417087554932
+Testing accuracy 95.93 %
+Epoch [10/25]
+Training loss 239.93333037993938
+Training accuracy 93.86166666666666 %
+Testing loss 178.4249423980713
+Testing accuracy 95.7 %
+Epoch [11/25]
+Training loss 232.33645931882063
+Training accuracy 94.01666666666667 %
+Testing loss 151.04946098327636
+Testing accuracy 96.29 %
+Epoch [12/25]
+Training loss 219.7178018064941
+Training accuracy 94.37166666666667 %
+Testing loss 174.22246246337892
+Testing accuracy 95.76 %
+Epoch [13/25]
+Training loss 213.03634438145158
+Training accuracy 94.47 %
+Testing loss 202.58631687164308
+Testing accuracy 95.21 %
+Epoch [14/25]
+Training loss 206.67023869338786
+Training accuracy 94.58166666666666 %
+Testing loss 167.79904975891114
+Testing accuracy 96.06 %
+Epoch [15/25]
+Training loss 202.87323944833477
+Training accuracy 94.74 %
+Testing loss 156.96753101348878
+Testing accuracy 96.3 %
+Epoch [16/25]
+Training loss 183.99520032024049
+Training accuracy 94.99 %
+Testing loss 161.08275985717773
+Testing accuracy 96.35 %
+Epoch [17/25]
+Training loss 190.29757818644543
+Training accuracy 95.08666666666667 %
+Testing loss 175.1337417602539
+Testing accuracy 95.85 %
+Epoch [18/25]
+Training loss 182.03974150455534
+Training accuracy 95.235 %
+Testing loss 147.32257251739503
+Testing accuracy 96.41 %
+Epoch [19/25]
+Training loss 174.81751183648697
+Training accuracy 95.25166666666667 %
+Testing loss 142.13309650421144
+Testing accuracy 96.41 %
+Epoch [20/25]
+Training loss 167.80258643666593
+Training accuracy 95.44333333333333 %
+Testing loss 144.54029684066774
+Testing accuracy 96.42 %
+Epoch [21/25]
+Training loss 172.4793162445007
+Training accuracy 95.44 %
+Testing loss 153.57462940216064
+Testing accuracy 96.28 %
+Epoch [22/25]
+Training loss 155.72399715599417
+Training accuracy 95.66666666666667 %
+Testing loss 152.18456172943115
+Testing accuracy 96.56 %
+Epoch [23/25]
+Training loss 162.38391055648344
+Training accuracy 95.77 %
+Testing loss 172.97398796081544
+Testing accuracy 96.24 %
+Epoch [24/25]
+Training loss 153.19216489708174
+Training accuracy 95.86166666666666 %
+Testing loss 156.05495910644532
+Testing accuracy 96.45 %
+Epoch [25/25]
+Training loss 158.05981760057472
+Training accuracy 95.79 %
+Testing loss 164.05661392211914
+Testing accuracy 96.51 %
+
+Training with num_bases=5, num_flips=5
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 341.2863763299286
+Training accuracy 84.46333333333334 %
+Testing loss 172.51041259765626
+Testing accuracy 93.36 %
+Epoch [2/25]
+Training loss 314.31148942922795
+Training accuracy 89.585 %
+Testing loss 176.87120094299317
+Testing accuracy 93.91 %
+Epoch [3/25]
+Training loss 286.06940494466807
+Training accuracy 91.23833333333333 %
+Testing loss 161.9193313598633
+Testing accuracy 94.74 %
+Epoch [4/25]
+Training loss 259.5237854133412
+Training accuracy 92.07833333333333 %
+Testing loss 184.47834968566895
+Testing accuracy 94.84 %
+Epoch [5/25]
+Training loss 244.46702441589122
+Training accuracy 92.65666666666667 %
+Testing loss 157.56904106140138
+Testing accuracy 95.16 %
+Epoch [6/25]
+Training loss 224.69442281345337
+Training accuracy 93.22666666666667 %
+Testing loss 154.6241611480713
+Testing accuracy 95.04 %
+Epoch [7/25]
+Training loss 208.47592964801393
+Training accuracy 93.54833333333333 %
+Testing loss 142.48961448669434
+Testing accuracy 95.9 %
+Epoch [8/25]
+Training loss 197.35182451624635
+Training accuracy 94.04 %
+Testing loss 133.1315830230713
+Testing accuracy 95.77 %
+Epoch [9/25]
+Training loss 186.37689386613516
+Training accuracy 94.24333333333334 %
+Testing loss 166.9110034942627
+Testing accuracy 95.35 %
+Epoch [10/25]
+Training loss 179.64671517383437
+Training accuracy 94.57166666666667 %
+Testing loss 145.96050148010255
+Testing accuracy 96.06 %
+Epoch [11/25]
+Training loss 172.91379085306514
+Training accuracy 94.83166666666666 %
+Testing loss 144.27522506713868
+Testing accuracy 95.81 %
+Epoch [12/25]
+Training loss 163.65841985777044
+Training accuracy 94.86166666666666 %
+Testing loss 138.0537971496582
+Testing accuracy 96.34 %
+Epoch [13/25]
+Training loss 160.92948337972553
+Training accuracy 95.01833333333333 %
+Testing loss 145.51848621368407
+Testing accuracy 95.99 %
+Epoch [14/25]
+Training loss 149.13563547827303
+Training accuracy 95.235 %
+Testing loss 129.6213634490967
+Testing accuracy 96.43 %
+Epoch [15/25]
+Training loss 146.53068024574029
+Training accuracy 95.55666666666667 %
+Testing loss 130.43248138427734
+Testing accuracy 96.23 %
+Epoch [16/25]
+Training loss 142.0842081711222
+Training accuracy 95.49166666666666 %
+Testing loss 140.7883674621582
+Testing accuracy 96.06 %
+Epoch [17/25]
+Training loss 136.98978804469715
+Training accuracy 95.61666666666666 %
+Testing loss 153.0633274078369
+Testing accuracy 95.85 %
+Epoch [18/25]
+Training loss 133.81801977144562
+Training accuracy 95.73166666666667 %
+Testing loss 164.3893207550049
+Testing accuracy 95.95 %
+Epoch [19/25]
+Training loss 128.11299264951845
+Training accuracy 95.87333333333333 %
+Testing loss 141.31670532226562
+Testing accuracy 96.16 %
+Epoch [20/25]
+Training loss 123.15577816471962
+Training accuracy 96.05833333333334 %
+Testing loss 142.09007987976074
+Testing accuracy 96.23 %
+Epoch [21/25]
+Training loss 126.75750949804511
+Training accuracy 95.93 %
+Testing loss 147.24125061035156
+Testing accuracy 96.24 %
+Epoch [22/25]
+Training loss 122.10057918886157
+Training accuracy 96.16833333333334 %
+Testing loss 152.83128509521484
+Testing accuracy 96.17 %
+Epoch [23/25]
+Training loss 123.89113744712188
+Training accuracy 96.10666666666667 %
+Testing loss 137.7026096343994
+Testing accuracy 96.34 %
+Epoch [24/25]
+Training loss 121.18708372148858
+Training accuracy 96.29833333333333 %
+Testing loss 127.96484966278076
+Testing accuracy 96.71 %
+Epoch [25/25]
+Training loss 113.22282116003225
+Training accuracy 96.34333333333333 %
+Testing loss 140.18219528198242
+Testing accuracy 96.61 %
+
+Training with num_bases=5, num_flips=10
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 302.5595351159404
+Training accuracy 85.39333333333333 %
+Testing loss 161.92946548461913
+Testing accuracy 92.73 %
+Epoch [2/25]
+Training loss 245.00148660360574
+Training accuracy 90.745 %
+Testing loss 123.83423728942871
+Testing accuracy 95.02 %
+Epoch [3/25]
+Training loss 217.99991057198588
+Training accuracy 91.94166666666666 %
+Testing loss 135.2769495010376
+Testing accuracy 95.1 %
+Epoch [4/25]
+Training loss 195.03835611279038
+Training accuracy 92.95833333333333 %
+Testing loss 121.52608261108398
+Testing accuracy 95.58 %
+Epoch [5/25]
+Training loss 176.02636970536236
+Training accuracy 93.71666666666667 %
+Testing loss 117.23267650604248
+Testing accuracy 95.55 %
+Epoch [6/25]
+Training loss 167.3616514592687
+Training accuracy 93.99833333333333 %
+Testing loss 108.34552965164184
+Testing accuracy 95.88 %
+Epoch [7/25]
+Training loss 151.5854828280409
+Training accuracy 94.47166666666666 %
+Testing loss 124.91042976379394
+Testing accuracy 95.51 %
+Epoch [8/25]
+Training loss 140.5244505144652
+Training accuracy 94.75 %
+Testing loss 110.16455078125
+Testing accuracy 95.94 %
+Epoch [9/25]
+Training loss 135.8804059207777
+Training accuracy 94.89333333333333 %
+Testing loss 100.42554092407227
+Testing accuracy 96.22 %
+Epoch [10/25]
+Training loss 130.47552580444477
+Training accuracy 95.10166666666667 %
+Testing loss 108.05428524017334
+Testing accuracy 95.9 %
+Epoch [11/25]
+Training loss 122.11491237383949
+Training accuracy 95.29833333333333 %
+Testing loss 102.60059127807617
+Testing accuracy 96.3 %
+Epoch [12/25]
+Training loss 117.22749487654916
+Training accuracy 95.48833333333333 %
+Testing loss 94.03491802215576
+Testing accuracy 96.56 %
+Epoch [13/25]
+Training loss 120.32703405032356
+Training accuracy 95.325 %
+Testing loss 97.70462703704834
+Testing accuracy 96.48 %
+Epoch [14/25]
+Training loss 108.46241667657843
+Training accuracy 95.72333333333333 %
+Testing loss 102.47327136993408
+Testing accuracy 96.46 %
+Epoch [15/25]
+Training loss 106.67177626344277
+Training accuracy 95.75166666666667 %
+Testing loss 99.96863975524903
+Testing accuracy 96.32 %
+Epoch [16/25]
+Training loss 107.99838467345371
+Training accuracy 95.77833333333334 %
+Testing loss 99.09653205871582
+Testing accuracy 96.52 %
+Epoch [17/25]
+Training loss 102.66826996068997
+Training accuracy 95.915 %
+Testing loss 102.21843719482422
+Testing accuracy 95.96 %
+Epoch [18/25]
+Training loss 100.13426302714738
+Training accuracy 95.94 %
+Testing loss 83.9088981628418
+Testing accuracy 96.75 %
+Epoch [19/25]
+Training loss 99.17325052167736
+Training accuracy 96.03166666666667 %
+Testing loss 91.27126045227051
+Testing accuracy 96.73 %
+Epoch [20/25]
+Training loss 97.05402282956095
+Training accuracy 96.16 %
+Testing loss 95.47168064117432
+Testing accuracy 96.85 %
+Epoch [21/25]
+Training loss 95.01283508204644
+Training accuracy 96.1 %
+Testing loss 95.7462308883667
+Testing accuracy 96.63 %
+Epoch [22/25]
+Training loss 94.56217321122288
+Training accuracy 96.09833333333333 %
+Testing loss 89.50739727020263
+Testing accuracy 96.75 %
+Epoch [23/25]
+Training loss 87.13656639163915
+Training accuracy 96.26666666666667 %
+Testing loss 93.42617721557617
+Testing accuracy 96.3 %
+Epoch [24/25]
+Training loss 92.07710095152498
+Training accuracy 96.22666666666667 %
+Testing loss 103.802445602417
+Testing accuracy 96.4 %
+Epoch [25/25]
+Training loss 86.8476447249891
+Training accuracy 96.39333333333333 %
+Testing loss 95.3975233078003
+Testing accuracy 96.64 %
+
+Training with num_bases=10, num_flips=1
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 442.4236425442226
+Training accuracy 83.58333333333333 %
+Testing loss 212.98690490722657
+Testing accuracy 92.91 %
+Epoch [2/25]
+Training loss 473.9603013148126
+Training accuracy 88.015 %
+Testing loss 296.4726951599121
+Testing accuracy 92.76 %
+Epoch [3/25]
+Training loss 472.4484656978339
+Training accuracy 89.31833333333333 %
+Testing loss 241.27787551879882
+Testing accuracy 93.99 %
+Epoch [4/25]
+Training loss 452.16059554144863
+Training accuracy 90.10333333333334 %
+Testing loss 285.941877746582
+Testing accuracy 93.43 %
+Epoch [5/25]
+Training loss 451.0878857232892
+Training accuracy 90.515 %
+Testing loss 282.05963134765625
+Testing accuracy 93.7 %
+Epoch [6/25]
+Training loss 424.02885200765104
+Training accuracy 91.05833333333334 %
+Testing loss 248.1960334777832
+Testing accuracy 94.68 %
+Epoch [7/25]
+Training loss 424.58736513713876
+Training accuracy 91.41166666666666 %
+Testing loss 237.3088737487793
+Testing accuracy 94.91 %
+Epoch [8/25]
+Training loss 412.6336633857297
+Training accuracy 91.63166666666666 %
+Testing loss 343.32346115112307
+Testing accuracy 93.4 %
+Epoch [9/25]
+Training loss 400.7080308888603
+Training accuracy 91.89 %
+Testing loss 275.80307693481444
+Testing accuracy 94.68 %
+Epoch [10/25]
+Training loss 377.81339690954024
+Training accuracy 92.18833333333333 %
+Testing loss 241.25669860839844
+Testing accuracy 94.98 %
+Epoch [11/25]
+Training loss 371.87303055615547
+Training accuracy 92.36666666666666 %
+Testing loss 249.48758239746093
+Testing accuracy 95.05 %
+Epoch [12/25]
+Training loss 366.94248098708687
+Training accuracy 92.475 %
+Testing loss 265.267098236084
+Testing accuracy 94.7 %
+Epoch [13/25]
+Training loss 355.2566926316552
+Training accuracy 92.79833333333333 %
+Testing loss 231.54315032958985
+Testing accuracy 95.46 %
+Epoch [14/25]
+Training loss 341.46904547563554
+Training accuracy 92.805 %
+Testing loss 265.29574356079104
+Testing accuracy 94.83 %
+Epoch [15/25]
+Training loss 338.78561616024365
+Training accuracy 93.21166666666667 %
+Testing loss 253.00912551879884
+Testing accuracy 94.94 %
+Epoch [16/25]
+Training loss 329.1799487726433
+Training accuracy 93.21 %
+Testing loss 234.89376983642578
+Testing accuracy 95.49 %
+Epoch [17/25]
+Training loss 311.8434989531422
+Training accuracy 93.38833333333334 %
+Testing loss 268.8374984741211
+Testing accuracy 95.03 %
+Epoch [18/25]
+Training loss 313.9626303108519
+Training accuracy 93.37666666666667 %
+Testing loss 243.7237632751465
+Testing accuracy 95.32 %
+Epoch [19/25]
+Training loss 304.53332645103495
+Training accuracy 93.45333333333333 %
+Testing loss 255.57699432373047
+Testing accuracy 95.41 %
+Epoch [20/25]
+Training loss 301.15511970044207
+Training accuracy 93.61666666666666 %
+Testing loss 233.22475357055663
+Testing accuracy 95.72 %
+Epoch [21/25]
+Training loss 290.84899510962794
+Training accuracy 93.81333333333333 %
+Testing loss 204.1093494415283
+Testing accuracy 95.99 %
+Epoch [22/25]
+Training loss 292.34980832906376
+Training accuracy 93.8 %
+Testing loss 224.98972969055177
+Testing accuracy 95.8 %
+Epoch [23/25]
+Training loss 280.7696260594431
+Training accuracy 93.94166666666666 %
+Testing loss 245.65436210632325
+Testing accuracy 95.42 %
+Epoch [24/25]
+Training loss 275.82758934356497
+Training accuracy 94.19666666666667 %
+Testing loss 241.25229721069337
+Testing accuracy 95.48 %
+Epoch [25/25]
+Training loss 269.0484556834922
+Training accuracy 94.235 %
+Testing loss 224.43520889282226
+Testing accuracy 95.83 %
+
+Training with num_bases=10, num_flips=2
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 440.1034178649997
+Training accuracy 83.89666666666666 %
+Testing loss 254.19708099365235
+Testing accuracy 91.73 %
+Epoch [2/25]
+Training loss 430.71331408439465
+Training accuracy 88.635 %
+Testing loss 216.32817993164062
+Testing accuracy 94.02 %
+Epoch [3/25]
+Training loss 410.476737270071
+Training accuracy 89.93666666666667 %
+Testing loss 242.49210357666016
+Testing accuracy 93.75 %
+Epoch [4/25]
+Training loss 404.845662993649
+Training accuracy 90.69333333333333 %
+Testing loss 244.4744094848633
+Testing accuracy 93.98 %
+Epoch [5/25]
+Training loss 392.65248691280766
+Training accuracy 91.185 %
+Testing loss 189.9661548614502
+Testing accuracy 95.41 %
+Epoch [6/25]
+Training loss 359.7286499389064
+Training accuracy 91.77333333333333 %
+Testing loss 193.25490341186523
+Testing accuracy 95.35 %
+Epoch [7/25]
+Training loss 360.74515179792843
+Training accuracy 92.02833333333334 %
+Testing loss 196.03452682495117
+Testing accuracy 95.63 %
+Epoch [8/25]
+Training loss 348.71265254455096
+Training accuracy 92.41166666666666 %
+Testing loss 233.66003341674804
+Testing accuracy 95.34 %
+Epoch [9/25]
+Training loss 330.842091409441
+Training accuracy 92.69333333333333 %
+Testing loss 201.14565353393556
+Testing accuracy 95.43 %
+Epoch [10/25]
+Training loss 310.5335495790037
+Training accuracy 93.05666666666667 %
+Testing loss 233.72104721069337
+Testing accuracy 94.91 %
+Epoch [11/25]
+Training loss 291.8738723824742
+Training accuracy 93.38333333333334 %
+Testing loss 208.9460247039795
+Testing accuracy 95.3 %
+Epoch [12/25]
+Training loss 293.6457153351426
+Training accuracy 93.52833333333334 %
+Testing loss 198.86217803955077
+Testing accuracy 95.68 %
+Epoch [13/25]
+Training loss 286.4797938559051
+Training accuracy 93.60833333333333 %
+Testing loss 211.00552368164062
+Testing accuracy 95.42 %
+Epoch [14/25]
+Training loss 268.7944421236252
+Training accuracy 93.87 %
+Testing loss 239.16341552734374
+Testing accuracy 95.3 %
+Epoch [15/25]
+Training loss 265.94877051277933
+Training accuracy 93.95666666666666 %
+Testing loss 178.24222068786622
+Testing accuracy 96.16 %
+Epoch [16/25]
+Training loss 255.62268041021653
+Training accuracy 94.07833333333333 %
+Testing loss 194.63299789428712
+Testing accuracy 95.98 %
+Epoch [17/25]
+Training loss 252.82054074740756
+Training accuracy 94.25166666666667 %
+Testing loss 184.00802421569824
+Testing accuracy 96.14 %
+Epoch [18/25]
+Training loss 244.84312860119005
+Training accuracy 94.31666666666666 %
+Testing loss 194.60931663513185
+Testing accuracy 96.1 %
+Epoch [19/25]
+Training loss 232.25002254480393
+Training accuracy 94.62166666666667 %
+Testing loss 196.92499656677245
+Testing accuracy 96.1 %
+Epoch [20/25]
+Training loss 230.70459206103607
+Training accuracy 94.80333333333333 %
+Testing loss 215.82883949279784
+Testing accuracy 96.03 %
+Epoch [21/25]
+Training loss 230.83547044087913
+Training accuracy 94.73166666666667 %
+Testing loss 252.98314514160157
+Testing accuracy 95.36 %
+Epoch [22/25]
+Training loss 224.5918897174646
+Training accuracy 94.88833333333334 %
+Testing loss 192.41399574279785
+Testing accuracy 96.14 %
+Epoch [23/25]
+Training loss 221.1130768617862
+Training accuracy 94.925 %
+Testing loss 221.16578941345216
+Testing accuracy 95.83 %
+Epoch [24/25]
+Training loss 211.68409892525287
+Training accuracy 94.91666666666667 %
+Testing loss 191.3980411529541
+Testing accuracy 96.02 %
+Epoch [25/25]
+Training loss 205.24495448935343
+Training accuracy 95.16 %
+Testing loss 178.41551151275635
+Testing accuracy 96.46 %
+
+Training with num_bases=10, num_flips=3
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 416.80304371184565
+Training accuracy 83.97166666666666 %
+Testing loss 248.47442550659179
+Testing accuracy 91.65 %
+Epoch [2/25]
+Training loss 415.9111809155119
+Training accuracy 88.80166666666666 %
+Testing loss 248.21189651489257
+Testing accuracy 93.26 %
+Epoch [3/25]
+Training loss 399.5148909953207
+Training accuracy 90.09333333333333 %
+Testing loss 206.9023239135742
+Testing accuracy 94.17 %
+Epoch [4/25]
+Training loss 375.9381852191307
+Training accuracy 91.03833333333333 %
+Testing loss 210.18109359741212
+Testing accuracy 94.85 %
+Epoch [5/25]
+Training loss 349.5405555487377
+Training accuracy 91.79 %
+Testing loss 209.94256706237792
+Testing accuracy 94.72 %
+Epoch [6/25]
+Training loss 337.8434855723169
+Training accuracy 92.225 %
+Testing loss 201.74733619689943
+Testing accuracy 95.29 %
+Epoch [7/25]
+Training loss 322.229362297834
+Training accuracy 92.63166666666666 %
+Testing loss 237.04633407592775
+Testing accuracy 94.88 %
+Epoch [8/25]
+Training loss 300.1735083356142
+Training accuracy 93.04333333333334 %
+Testing loss 221.45621910095215
+Testing accuracy 94.91 %
+Epoch [9/25]
+Training loss 285.22721662423936
+Training accuracy 93.41666666666667 %
+Testing loss 204.24261054992675
+Testing accuracy 95.33 %
+Epoch [10/25]
+Training loss 272.0673626640497
+Training accuracy 93.55 %
+Testing loss 177.12194328308107
+Testing accuracy 95.67 %
+Epoch [11/25]
+Training loss 262.64223039723134
+Training accuracy 93.9 %
+Testing loss 219.67999305725098
+Testing accuracy 95.36 %
+Epoch [12/25]
+Training loss 258.40106399756587
+Training accuracy 93.99666666666667 %
+Testing loss 199.92852554321288
+Testing accuracy 95.67 %
+Epoch [13/25]
+Training loss 248.16195707625747
+Training accuracy 94.17166666666667 %
+Testing loss 232.2378257751465
+Testing accuracy 95.27 %
+Epoch [14/25]
+Training loss 234.80952002077882
+Training accuracy 94.45333333333333 %
+Testing loss 185.25005760192872
+Testing accuracy 95.74 %
+Epoch [15/25]
+Training loss 221.59113832302708
+Training accuracy 94.64333333333333 %
+Testing loss 201.44855613708495
+Testing accuracy 95.68 %
+Epoch [16/25]
+Training loss 217.48927909048749
+Training accuracy 94.88833333333334 %
+Testing loss 167.76135959625245
+Testing accuracy 96.31 %
+Epoch [17/25]
+Training loss 211.15149148651375
+Training accuracy 94.92333333333333 %
+Testing loss 163.96107120513915
+Testing accuracy 96.17 %
+Epoch [18/25]
+Training loss 205.11803890815582
+Training accuracy 95.2 %
+Testing loss 189.50406074523926
+Testing accuracy 95.98 %
+Epoch [19/25]
+Training loss 201.1894167428763
+Training accuracy 95.085 %
+Testing loss 175.5795684814453
+Testing accuracy 96.06 %
+Epoch [20/25]
+Training loss 199.30755110463284
+Training accuracy 95.315 %
+Testing loss 169.25114879608154
+Testing accuracy 96.34 %
+Epoch [21/25]
+Training loss 186.29549028724043
+Training accuracy 95.49166666666666 %
+Testing loss 173.7961410522461
+Testing accuracy 96.31 %
+Epoch [22/25]
+Training loss 177.2988866384236
+Training accuracy 95.66166666666666 %
+Testing loss 164.47642116546632
+Testing accuracy 96.28 %
+Epoch [23/25]
+Training loss 175.32579229325157
+Training accuracy 95.62166666666667 %
+Testing loss 180.29098243713378
+Testing accuracy 95.96 %
+Epoch [24/25]
+Training loss 170.60787894966458
+Training accuracy 95.79 %
+Testing loss 188.26085357666017
+Testing accuracy 96.02 %
+Epoch [25/25]
+Training loss 175.22912222000153
+Training accuracy 95.82833333333333 %
+Testing loss 187.2765172958374
+Testing accuracy 96.36 %
+
+Training with num_bases=10, num_flips=5
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 385.6445448298828
+Training accuracy 84.11333333333333 %
+Testing loss 252.9578094482422
+Testing accuracy 91.21 %
+Epoch [2/25]
+Training loss 359.8115887616019
+Training accuracy 89.4 %
+Testing loss 217.6643394470215
+Testing accuracy 93.02 %
+Epoch [3/25]
+Training loss 331.61993213917714
+Training accuracy 90.74 %
+Testing loss 196.1402503967285
+Testing accuracy 94.28 %
+Epoch [4/25]
+Training loss 306.20968990909455
+Training accuracy 91.67833333333333 %
+Testing loss 217.20725479125977
+Testing accuracy 94.13 %
+Epoch [5/25]
+Training loss 288.02748663338775
+Training accuracy 92.34166666666667 %
+Testing loss 181.8528564453125
+Testing accuracy 95.22 %
+Epoch [6/25]
+Training loss 259.00312276734877
+Training accuracy 93.14333333333333 %
+Testing loss 190.6916675567627
+Testing accuracy 95.0 %
+Epoch [7/25]
+Training loss 254.76427819333617
+Training accuracy 93.305 %
+Testing loss 197.23065948486328
+Testing accuracy 94.81 %
+Epoch [8/25]
+Training loss 237.61637380371153
+Training accuracy 93.72 %
+Testing loss 180.84549522399902
+Testing accuracy 95.5 %
+Epoch [9/25]
+Training loss 226.0184011735093
+Training accuracy 94.14666666666666 %
+Testing loss 149.77217597961425
+Testing accuracy 95.85 %
+Epoch [10/25]
+Training loss 217.18334572335806
+Training accuracy 94.18666666666667 %
+Testing loss 171.91009445190429
+Testing accuracy 95.65 %
+Epoch [11/25]
+Training loss 203.0392042783687
+Training accuracy 94.57666666666667 %
+Testing loss 161.43823127746583
+Testing accuracy 95.95 %
+Epoch [12/25]
+Training loss 196.07570528936213
+Training accuracy 94.76 %
+Testing loss 170.21967220306396
+Testing accuracy 95.84 %
+Epoch [13/25]
+Training loss 179.26169880161913
+Training accuracy 95.10666666666667 %
+Testing loss 150.34917030334472
+Testing accuracy 96.29 %
+Epoch [14/25]
+Training loss 174.65452056474456
+Training accuracy 95.24 %
+Testing loss 174.36416511535646
+Testing accuracy 96.0 %
+Epoch [15/25]
+Training loss 174.20751924230157
+Training accuracy 95.25 %
+Testing loss 181.11073379516603
+Testing accuracy 96.02 %
+Epoch [16/25]
+Training loss 162.88969463544726
+Training accuracy 95.50666666666666 %
+Testing loss 167.45089111328124
+Testing accuracy 96.06 %
+Epoch [17/25]
+Training loss 151.47972193887978
+Training accuracy 95.71166666666667 %
+Testing loss 160.3826126098633
+Testing accuracy 96.37 %
+Epoch [18/25]
+Training loss 148.67387604221554
+Training accuracy 95.84 %
+Testing loss 163.4267951965332
+Testing accuracy 96.21 %
+Epoch [19/25]
+Training loss 151.61386666177796
+Training accuracy 95.91166666666666 %
+Testing loss 161.61249084472655
+Testing accuracy 96.53 %
+Epoch [20/25]
+Training loss 141.65634571343472
+Training accuracy 96.115 %
+Testing loss 150.66049003601074
+Testing accuracy 96.49 %
+Epoch [21/25]
+Training loss 133.6443927807177
+Training accuracy 96.16333333333333 %
+Testing loss 159.0934268951416
+Testing accuracy 96.47 %
+Epoch [22/25]
+Training loss 136.27697810294092
+Training accuracy 96.285 %
+Testing loss 182.70520973205566
+Testing accuracy 96.27 %
+Epoch [23/25]
+Training loss 129.51750726483093
+Training accuracy 96.38 %
+Testing loss 167.5970802307129
+Testing accuracy 96.48 %
+Epoch [24/25]
+Training loss 126.91474988610042
+Training accuracy 96.35833333333333 %
+Testing loss 162.53041305541993
+Testing accuracy 96.43 %
+Epoch [25/25]
+Training loss 126.264342998224
+Training accuracy 96.46666666666667 %
+Testing loss 162.4914405822754
+Testing accuracy 96.44 %
+
+Training with num_bases=10, num_flips=10
+
+No checkpoint found, starting training from scratch
+Epoch [1/25]
+Training loss 345.31038036769144
+Training accuracy 84.52333333333333 %
+Testing loss 187.77239608764648
+Testing accuracy 92.75 %
+Epoch [2/25]
+Training loss 287.76161045480694
+Training accuracy 89.84833333333333 %
+Testing loss 152.0977924346924
+Testing accuracy 94.21 %
+Epoch [3/25]
+Training loss 255.6555199765388
+Training accuracy 91.53833333333333 %
+Testing loss 143.55900459289552
+Testing accuracy 94.76 %
+Epoch [4/25]
+Training loss 223.9974662515939
+Training accuracy 92.54666666666667 %
+Testing loss 143.95472927093505
+Testing accuracy 95.29 %
+Epoch [5/25]
+Training loss 200.50769314147473
+Training accuracy 93.32666666666667 %
+Testing loss 135.9664674758911
+Testing accuracy 95.51 %
+Epoch [6/25]
+Training loss 185.84540601358069
+Training accuracy 93.815 %
+Testing loss 126.38287391662598
+Testing accuracy 95.82 %
+Epoch [7/25]
+Training loss 164.36261029033872
+Training accuracy 94.32166666666667 %
+Testing loss 147.4571678161621
+Testing accuracy 95.73 %
+Epoch [8/25]
+Training loss 163.99527234189645
+Training accuracy 94.62333333333333 %
+Testing loss 132.48940773010253
+Testing accuracy 96.12 %
+Epoch [9/25]
+Training loss 147.05937252205206
+Training accuracy 94.98833333333333 %
+Testing loss 133.52221240997315
+Testing accuracy 96.18 %
+Epoch [10/25]
+Training loss 143.4803532048682
+Training accuracy 95.05833333333334 %
+Testing loss 125.94772148132324
+Testing accuracy 96.27 %
+Epoch [11/25]
+Training loss 130.96626359485418
+Training accuracy 95.43166666666667 %
+Testing loss 132.93235607147216
+Testing accuracy 96.19 %
+Epoch [12/25]
+Training loss 124.6103226137288
+Training accuracy 95.65166666666667 %
+Testing loss 123.15596113204955
+Testing accuracy 96.11 %
+Epoch [13/25]
+Training loss 122.37298239215588
+Training accuracy 95.85333333333334 %
+Testing loss 120.05066719055176
+Testing accuracy 96.56 %
+Epoch [14/25]
+Training loss 111.89611853692658
+Training accuracy 96.07333333333334 %
+Testing loss 122.67579660415649
+Testing accuracy 96.66 %
+Epoch [15/25]
+Training loss 111.07082022334707
+Training accuracy 96.19 %
+Testing loss 124.19391784667968
+Testing accuracy 96.54 %
+Epoch [16/25]
+Training loss 107.72247456544444
+Training accuracy 96.29833333333333 %
+Testing loss 121.74217071533204
+Testing accuracy 96.35 %
+Epoch [17/25]
+Training loss 103.6393824412987
+Training accuracy 96.40833333333333 %
+Testing loss 131.31576099395753
+Testing accuracy 96.52 %
+Epoch [18/25]
+Training loss 107.1314072084551
+Training accuracy 96.375 %
+Testing loss 126.81081132888794
+Testing accuracy 96.45 %
+Epoch [19/25]
+Training loss 100.26619468100614
+Training accuracy 96.46 %
+Testing loss 123.60267782211304
+Testing accuracy 96.57 %
+Epoch [20/25]
+Training loss 94.31617062678177
+Training accuracy 96.645 %
+Testing loss 118.86869349479676
+Testing accuracy 96.63 %
+Epoch [21/25]
+Training loss 90.59172488124517
+Training accuracy 96.865 %
+Testing loss 120.02239875793457
+Testing accuracy 96.83 %
+Epoch [22/25]
+Training loss 89.80244430424922
+Training accuracy 96.80833333333334 %
+Testing loss 117.37121238708497
+Testing accuracy 96.86 %
+Epoch [23/25]
+Training loss 88.73229914011135
+Training accuracy 96.89 %
+Testing loss 121.72369565963746
+Testing accuracy 96.69 %
+Epoch [24/25]
+Training loss 84.38144984568258
+Training accuracy 96.975 %
+Testing loss 113.22556872367859
+Testing accuracy 96.98 %
+Epoch [25/25]
+Training loss 84.93454625570749
+Training accuracy 96.92333333333333 %
+Testing loss 123.5129672050476
+Testing accuracy 96.8 %
+Grid search done! Summary:
+bases_1_flips_1 | Best Acc: 96.02% | Final Acc: 95.91%
+bases_1_flips_2 | Best Acc: 96.17% | Final Acc: 96.06%
+bases_1_flips_3 | Best Acc: 96.18% | Final Acc: 95.74%
+bases_1_flips_5 | Best Acc: 95.97% | Final Acc: 95.61%
+bases_1_flips_10 | Best Acc: 96.16% | Final Acc: 95.56%
+bases_2_flips_1 | Best Acc: 96.15% | Final Acc: 96.11%
+bases_2_flips_2 | Best Acc: 96.06% | Final Acc: 96.00%
+bases_2_flips_3 | Best Acc: 96.36% | Final Acc: 96.02%
+bases_2_flips_5 | Best Acc: 96.25% | Final Acc: 96.19%
+bases_2_flips_10 | Best Acc: 95.80% | Final Acc: 95.63%
+bases_3_flips_1 | Best Acc: 96.07% | Final Acc: 96.07%
+bases_3_flips_2 | Best Acc: 96.40% | Final Acc: 96.28%
+bases_3_flips_3 | Best Acc: 96.54% | Final Acc: 96.44%
+bases_3_flips_5 | Best Acc: 96.63% | Final Acc: 96.41%
+bases_3_flips_10 | Best Acc: 96.15% | Final Acc: 94.92%
+bases_5_flips_1 | Best Acc: 96.20% | Final Acc: 96.15%
+bases_5_flips_2 | Best Acc: 96.51% | Final Acc: 96.47%
+bases_5_flips_3 | Best Acc: 96.56% | Final Acc: 96.51%
+bases_5_flips_5 | Best Acc: 96.71% | Final Acc: 96.61%
+bases_5_flips_10 | Best Acc: 96.85% | Final Acc: 96.64%
+bases_10_flips_1 | Best Acc: 95.99% | Final Acc: 95.83%
+bases_10_flips_2 | Best Acc: 96.46% | Final Acc: 96.46%
+bases_10_flips_3 | Best Acc: 96.36% | Final Acc: 96.36%
+bases_10_flips_5 | Best Acc: 96.53% | Final Acc: 96.44%
+bases_10_flips_10 | Best Acc: 96.98% | Final Acc: 96.80%
+
+Best configuration: bases_10_flips_10 with Best Test Accuracy: 96.98%

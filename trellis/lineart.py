@@ -29,8 +29,8 @@ class LinearT(nn.Module):
             ("11", 0): ("01", self.mat01),
             ("11", 1): ("11", self.mat11),
         }
-        binary_bits = torch.randint(0, 2, (self.num_blocks,), dtype=torch.float32, device=current_device) # before it was -1, 1 - do we keep it that way or change to 0, 1
-        self.binary_coeffs = torch.nn.Parameter(binary_bits, requires_grad=False)
+        binary_bits = torch.randint(0, 2, (self.num_blocks,), dtype=torch.float32, device=current_device, requires_grad=True) # now 0, 1 instead of -1, 1 with orthogonal
+        self.binary_coeffs = torch.nn.Parameter(binary_bits)
         self.binary_coeffs.is_trellis = True
         self.bias = torch.nn.Parameter(torch.zeros(out_params, device=current_device))
         self.bias.is_trellis = False
@@ -39,8 +39,9 @@ class LinearT(nn.Module):
         self.binary_coeffs.num_blocks = self.num_blocks
         self.binary_coeffs.out_params = self.out_params
         self.binary_coeffs.in_params = self.in_params
+        self.scale = (2.0 * self.block_size / self.in_params) ** 0.5
 
-    def forward(self, x):
+    def weight(self):
         curr_state = "00"
         decoded = []
         for bit in self.binary_coeffs.detach().cpu().numpy().astype(int):
@@ -49,6 +50,9 @@ class LinearT(nn.Module):
             curr_state = next_state
         W = torch.stack(decoded).view(self.out_params // self.block_size, self.in_params // self.block_size, self.block_size, self.block_size)
         W = W.permute(0, 2, 1, 3).reshape(self.out_params, self.in_params)
-        W = W.clone().requires_grad_(True)
-        self.binary_coeffs.W = W
+        W = W + (self.binary_coeffs.sum() * 0.0)
+        return W * self.scale
+
+    def forward(self, x):
+        W = self.weight()
         return x @ W.T + self.bias

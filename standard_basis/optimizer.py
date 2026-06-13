@@ -1,6 +1,6 @@
 import torch
 
-class OrthogonalOptimizer(torch.optim.Optimizer):
+class SBOptimizer(torch.optim.Optimizer):
     def __init__(self, params, lr=0.01, momentum=0.9, num_flips=1):
         defaults = dict(lr=lr, momentum=momentum, num_flips=num_flips)
         super().__init__(params, defaults)
@@ -31,34 +31,3 @@ class OrthogonalOptimizer(torch.optim.Optimizer):
                 for i in max_i:
                     p.view(-1)[i] *= -1
         return loss
-    
-    # def hb_transform(self, x):
-    #     if len(x.shape) == 1:
-    #         x = x.view(1,-1)
-    #     (m,n) = x.shape
-    #     k = 1
-    #     while 4**k < n:
-    #         k += 1
-    #     assert(4**k == n)
-    #     x = x.reshape((m,) + (4,)*k)
-    #     for i in range(k):
-    #         x = x.sum(1+i,keepdim=True) - 2*x
-    #     x = x.reshape((m,) + (2,2)*k)
-    #     x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
-    #     return x.reshape(m, 2**k, 2**k) / (2**k)
-    
-    def hb_transform(self, x):
-        if len(x.shape) == 1:
-            x = x.view(1,-1)
-        (m,n) = x.shape
-        k = 1
-        while 4**k < n:
-            k += 1
-        assert(4**k == n)
-        b = torch.tensor([1,1,-1,-1]).to(dtype=x.dtype, device=x.device)
-        x = x.reshape((m,) + (4,)*k)
-        for i in range(k):
-            x = x.flip(1+i) + x * b.view((1,)*(i+1) + (4,) + (1,)*(k-1-i))
-        x = x.reshape((m,) + (2,2)*k)
-        x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
-        return x.reshape(m, 2**k, 2**k)

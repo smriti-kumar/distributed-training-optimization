@@ -7,7 +7,8 @@ class TrellisOptimizer(torch.optim.Optimizer):
         for group in self.param_groups:
             for p in group['params']:
                 self.state[p] = {}
-                
+
+    @torch.no_grad()
     def step(self, closure=None):
         loss = None
         if closure is not None:
@@ -17,40 +18,17 @@ class TrellisOptimizer(torch.optim.Optimizer):
             for p in group['params']:
                 if p.grad is None:
                     continue
-                if not getattr(p, 'is_trellis', False): # gradient descent on biases and non lineart layers
+                if not getattr(p, 'is_trellis', False): # gradient descent on biases
                     p.data -= group['lr'] * p.grad.data
                     continue
-                W = getattr(p, 'W', None)
-                if W is None or W.grad is None:
-                    continue
-                W_grad = W.grad.data
-                states = p.states
-                block_size = p.block_size
-                num_blocks = p.num_blocks
                 if "momentum_buffer" not in self.state[p]:
-                    self.state[p]["momentum_buffer"] = torch.zeros_like(W_grad)
+                    self.state[p]["momentum_buffer"] = torch.zeros_like(p)
                 m = self.state[p]["momentum_buffer"]
-                m = group["momentum"] * m + (1 - group["momentum"]) * W_grad
+                m = group["momentum"] * m + (1 - group["momentum"]) * p.grad
                 self.state[p]["momentum_buffer"] = m
-                m = m.view(p.out_params // block_size, block_size, p.in_params // block_size, block_size)
-                m = m.permute(0, 2, 1, 3).reshape(num_blocks, block_size, block_size)
-                curr_state = "00"
-                curr_path = []
-                for bit in p.data.detach().cpu().numpy().astype(int):
-                    curr_path.append(curr_state)
-                    next_state, _ = states[(curr_state, int(bit.item()))]
-                    curr_state = next_state
-                scores = torch.zeros(num_blocks, device=p.device)
-                alts = torch.zeros(num_blocks, device=p.device)
-                for i in range(num_blocks):
-                    alts[i] = 1 if int(p.data[i].item()) == 0 else 0
-                    prev_state = curr_path[i]
-                    _, current_mat = states[(prev_state, int(p.data[i].item()))]
-                    _, flipped_mat = states[(prev_state, alts[i])]
-                    W_change = flipped_mat - current_mat
-                    scores[i] = -torch.sum(W_change * m[i])
-                top_scores, top_indices = torch.topk(scores, min(group["num_flips"], num_blocks))
-                for score, idx in zip(top_scores, top_indices):
-                    if score > 0:
-                        p.data[idx] = alts[idx]
+                curr_bits = p.view(-1)
+                scores = m.view(-1) * (2 * curr_bits - 1) # want to convert to 1/-1 so that scores aren't 0 for bits that are 0 that need to flip
+                _, max_i = torch.topk(scores, group["num_flips"])
+                for i in max_i:
+                    p.view(-1)[i] = 1.0 - p.view(-1)[i]
         return loss
