@@ -30,5 +30,6 @@ class TrellisOptimizer(torch.optim.Optimizer):
                 scores = m.view(-1) * (2 * curr_bits - 1) # want to convert to 1/-1 so that scores aren't 0 for bits that are 0 that need to flip
                 _, max_i = torch.topk(scores, group["num_flips"])
                 for i in max_i:
-                    p.view(-1)[i] = 1.0 - p.view(-1)[i]
+                    if scores[i] > 0:
+                        p.view(-1)[i] = 1.0 - p.view(-1)[i]
         return loss

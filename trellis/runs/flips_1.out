@@ -1,0 +1,308 @@
+Using device: cuda
+No checkpoint found, starting training from scratch.
+Epoch [1/50]
+Training loss 0.5429353558849388
+Training accuracy 88.85333333333334 %
+Testing loss 0.31830536276102067
+Testing accuracy 92.06 %
+Checkpoint saved securely at end of epoch 1
+Epoch [2/50]
+Training loss 0.28803748063539
+Training accuracy 92.635 %
+Testing loss 0.3102546975016594
+Testing accuracy 92.53 %
+Checkpoint saved securely at end of epoch 2
+Epoch [3/50]
+Training loss 0.26338963216681344
+Training accuracy 93.42666666666666 %
+Testing loss 0.29102938920259475
+Testing accuracy 93.5 %
+Checkpoint saved securely at end of epoch 3
+Epoch [4/50]
+Training loss 0.23929520045655664
+Training accuracy 93.75166666666667 %
+Testing loss 0.2875454232096672
+Testing accuracy 93.42 %
+Checkpoint saved securely at end of epoch 4
+Epoch [5/50]
+Training loss 0.22748795040487313
+Training accuracy 94.08833333333334 %
+Testing loss 0.3228648751974106
+Testing accuracy 93.46 %
+Checkpoint saved securely at end of epoch 5
+Epoch [6/50]
+Training loss 0.22471034772250653
+Training accuracy 94.29666666666667 %
+Testing loss 0.3425387769937515
+Testing accuracy 93.2 %
+Checkpoint saved securely at end of epoch 6
+Epoch [7/50]
+Training loss 0.21193313372112305
+Training accuracy 94.39833333333333 %
+Testing loss 0.38412750884890556
+Testing accuracy 92.53 %
+Checkpoint saved securely at end of epoch 7
+Epoch [8/50]
+Training loss 0.2093454185375466
+Training accuracy 94.72333333333333 %
+Testing loss 0.3917285084724426
+Testing accuracy 93.03 %
+Checkpoint saved securely at end of epoch 8
+Epoch [9/50]
+Training loss 0.20574098902979845
+Training accuracy 94.725 %
+Testing loss 0.3638985723257065
+Testing accuracy 93.5 %
+Checkpoint saved securely at end of epoch 9
+Epoch [10/50]
+Training loss 0.20621264804477735
+Training accuracy 94.83666666666667 %
+Testing loss 0.3763423562049866
+Testing accuracy 93.54 %
+Checkpoint saved securely at end of epoch 10
+Epoch [11/50]
+Training loss 0.19538230106159324
+Training accuracy 95.035 %
+Testing loss 0.4257332071661949
+Testing accuracy 92.95 %
+Checkpoint saved securely at end of epoch 11
+Epoch [12/50]
+Training loss 0.19466023600940546
+Training accuracy 95.035 %
+Testing loss 0.44253753423690795
+Testing accuracy 93.49 %
+Checkpoint saved securely at end of epoch 12
+Epoch [13/50]
+Training loss 0.20288283765965226
+Training accuracy 95.01666666666667 %
+Testing loss 0.4379544660449028
+Testing accuracy 93.14 %
+Checkpoint saved securely at end of epoch 13
+Epoch [14/50]
+Training loss 0.19534801356268722
+Training accuracy 95.13 %
+Testing loss 0.41835668236017226
+Testing accuracy 93.75 %
+Checkpoint saved securely at end of epoch 14
+Epoch [15/50]
+Training loss 0.1922252883847464
+Training accuracy 95.22833333333334 %
+Testing loss 0.44304693937301637
+Testing accuracy 93.15 %
+Checkpoint saved securely at end of epoch 15
+Epoch [16/50]
+Training loss 0.1945020904382726
+Training accuracy 95.21833333333333 %
+Testing loss 0.40830778777599336
+Testing accuracy 93.73 %
+Checkpoint saved securely at end of epoch 16
+Epoch [17/50]
+Training loss 0.18940672308153922
+Training accuracy 95.38333333333334 %
+Testing loss 0.5092472285032272
+Testing accuracy 92.64 %
+Checkpoint saved securely at end of epoch 17
+Epoch [18/50]
+Training loss 0.1949028180237178
+Training accuracy 95.31 %
+Testing loss 0.48769486546516416
+Testing accuracy 92.86 %
+Checkpoint saved securely at end of epoch 18
+Epoch [19/50]
+Training loss 0.19552246275925925
+Training accuracy 95.31166666666667 %
+Testing loss 0.47540791928768156
+Testing accuracy 93.47 %
+Checkpoint saved securely at end of epoch 19
+Epoch [20/50]
+Training loss 0.1925385986109147
+Training accuracy 95.46 %
+Testing loss 0.47778830379247667
+Testing accuracy 93.47 %
+Checkpoint saved securely at end of epoch 20
+Epoch [21/50]
+Training loss 0.188210491446293
+Training accuracy 95.505 %
+Testing loss 0.4465367138385773
+Testing accuracy 93.51 %
+Checkpoint saved securely at end of epoch 21
+Epoch [22/50]
+Training loss 0.1886654312968784
+Training accuracy 95.565 %
+Testing loss 0.5354957893490792
+Testing accuracy 93.12 %
+Checkpoint saved securely at end of epoch 22
+Epoch [23/50]
+Training loss 0.19376023604328466
+Training accuracy 95.49666666666667 %
+Testing loss 0.500365936756134
+Testing accuracy 93.45 %
+Checkpoint saved securely at end of epoch 23
+Epoch [24/50]
+Training loss 0.1887775131954952
+Training accuracy 95.57666666666667 %
+Testing loss 0.5190495371818542
+Testing accuracy 93.67 %
+Checkpoint saved securely at end of epoch 24
+Epoch [25/50]
+Training loss 0.18461099149688173
+Training accuracy 95.71166666666667 %
+Testing loss 0.5232907742261886
+Testing accuracy 93.43 %
+Checkpoint saved securely at end of epoch 25
+Epoch [26/50]
+Training loss 0.18945576183483978
+Training accuracy 95.57166666666667 %
+Testing loss 0.5362596154212952
+Testing accuracy 93.38 %
+Checkpoint saved securely at end of epoch 26
+Epoch [27/50]
+Training loss 0.18948972034694664
+Training accuracy 95.65 %
+Testing loss 0.532528655230999
+Testing accuracy 93.67 %
+Checkpoint saved securely at end of epoch 27
+Epoch [28/50]
+Training loss 0.18393389622726852
+Training accuracy 95.75 %
+Testing loss 0.5473992884159088
+Testing accuracy 93.26 %
+Checkpoint saved securely at end of epoch 28
+Epoch [29/50]
+Training loss 0.18881756920861653
+Training accuracy 95.70333333333333 %
+Testing loss 0.5497993975877762
+Testing accuracy 93.45 %
+Checkpoint saved securely at end of epoch 29
+Epoch [30/50]
+Training loss 0.18331658733336154
+Training accuracy 95.80666666666667 %
+Testing loss 0.5800822257995606
+Testing accuracy 93.6 %
+Checkpoint saved securely at end of epoch 30
+Epoch [31/50]
+Training loss 0.18359052667270231
+Training accuracy 95.85333333333334 %
+Testing loss 0.5735980316996574
+Testing accuracy 93.87 %
+Checkpoint saved securely at end of epoch 31
+Epoch [32/50]
+Training loss 0.1866555461330671
+Training accuracy 95.75666666666666 %
+Testing loss 0.6118457406759262
+Testing accuracy 93.82 %
+Checkpoint saved securely at end of epoch 32
+Epoch [33/50]
+Training loss 0.18146145629740712
+Training accuracy 96.005 %
+Testing loss 0.5722391933202744
+Testing accuracy 93.86 %
+Checkpoint saved securely at end of epoch 33
+Epoch [34/50]
+Training loss 0.18985459124976187
+Training accuracy 95.76 %
+Testing loss 0.6294976651668549
+Testing accuracy 93.27 %
+Checkpoint saved securely at end of epoch 34
+Epoch [35/50]
+Training loss 0.1819791932853416
+Training accuracy 96.02666666666667 %
+Testing loss 0.605994100868702
+Testing accuracy 93.21 %
+Checkpoint saved securely at end of epoch 35
+Epoch [36/50]
+Training loss 0.18910229994035227
+Training accuracy 95.85166666666667 %
+Testing loss 0.6360833093523979
+Testing accuracy 93.15 %
+Checkpoint saved securely at end of epoch 36
+Epoch [37/50]
+Training loss 0.1797786296748551
+Training accuracy 95.93333333333334 %
+Testing loss 0.6567171096801758
+Testing accuracy 93.31 %
+Checkpoint saved securely at end of epoch 37
+Epoch [38/50]
+Training loss 0.18477648203527158
+Training accuracy 96.04 %
+Testing loss 0.664255540072918
+Testing accuracy 93.19 %
+Checkpoint saved securely at end of epoch 38
+Epoch [39/50]
+Training loss 0.18710842384121834
+Training accuracy 95.97666666666667 %
+Testing loss 0.6264462977647781
+Testing accuracy 93.96 %
+Checkpoint saved securely at end of epoch 39
+Epoch [40/50]
+Training loss 0.1811275719075847
+Training accuracy 96.03666666666666 %
+Testing loss 0.6507758542895317
+Testing accuracy 93.56 %
+Checkpoint saved securely at end of epoch 40
+Epoch [41/50]
+Training loss 0.18315609013393572
+Training accuracy 96.095 %
+Testing loss 0.6401528716087341
+Testing accuracy 93.5 %
+Checkpoint saved securely at end of epoch 41
+Epoch [41/50]
+Training loss 1.8472460083594529
+Training accuracy 84.15 %
+Testing loss 0.8656560361385346
+Testing accuracy 88.75 %
+Checkpoint saved securely at end of epoch 41
+Epoch [42/50]
+Training loss 0.6647948064817438
+Training accuracy 89.38333333333334 %
+Testing loss 0.6659442394971847
+Testing accuracy 89.38 %
+Checkpoint saved securely at end of epoch 42
+Epoch [43/50]
+Training loss 0.47170942980269026
+Training accuracy 90.71333333333334 %
+Testing loss 0.5663088142871857
+Testing accuracy 90.31 %
+Checkpoint saved securely at end of epoch 43
+Epoch [44/50]
+Training loss 0.38695760561076653
+Training accuracy 91.39 %
+Testing loss 0.5135961428284646
+Testing accuracy 90.6 %
+Checkpoint saved securely at end of epoch 44
+Epoch [45/50]
+Training loss 0.3377222967469638
+Training accuracy 91.92166666666667 %
+Testing loss 0.4757086932659149
+Testing accuracy 90.75 %
+Checkpoint saved securely at end of epoch 45
+Epoch [46/50]
+Training loss 0.3127002905177981
+Training accuracy 92.29 %
+Testing loss 0.4580703884363174
+Testing accuracy 90.81 %
+Checkpoint saved securely at end of epoch 46
+Epoch [47/50]
+Training loss 0.29243205377888615
+Training accuracy 92.56333333333333 %
+Testing loss 0.45041462033987045
+Testing accuracy 91.57 %
+Checkpoint saved securely at end of epoch 47
+Epoch [48/50]
+Training loss 0.27873157829328554
+Training accuracy 92.92833333333333 %
+Testing loss 0.42534974664449693
+Testing accuracy 91.43 %
+Checkpoint saved securely at end of epoch 48
+Epoch [49/50]
+Training loss 0.2674146765618003
+Training accuracy 93.01166666666667 %
+Testing loss 0.47809194922447207
+Testing accuracy 90.42 %
+Checkpoint saved securely at end of epoch 49
+Epoch [50/50]
+Training loss 0.2625089473699724
+Training accuracy 93.135 %
+Testing loss 0.43026958256959913
+Testing accuracy 91.48 %
+Checkpoint saved securely at end of epoch 50
