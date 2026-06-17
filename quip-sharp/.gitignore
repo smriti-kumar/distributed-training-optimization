@@ -2,7 +2,6 @@
 *~
 *.safetensors
 *.err
-*.out
 *.json
 __pycache__/
 #*

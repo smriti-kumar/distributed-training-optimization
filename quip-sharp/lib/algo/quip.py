@@ -487,15 +487,16 @@ def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
     if os.path.exists(save_path):
         return
 
-    H_data = torch.load(hessian_path, map_location=torch.device('cpu'))
-    H = utils.flat_to_sym(H_data['flatH'], H_data['n'])
-    mu = H_data['mu']
-    H.add_(mu[None, :] * mu[:, None])
-    n = H_data['n']
+    # H_data = torch.load(hessian_path, map_location=torch.device('cpu'))
+    # H = utils.flat_to_sym(H_data['flatH'], H_data['n'])
+    # mu = H_data['mu']
+    # H.add_(mu[None, :] * mu[:, None])
+    # n = H_data['n']
+    H = torch.eye(weights[0].shape[1], dtype=H.dtype, device=H.device)
     W = torch.vstack([
         weights[i].to(dtype_) / scales[i] for i in range(len(weights))
     ]).to(dtype_)
-    H = utils.regularize_H(H, n, args.sigma_reg)
+    # H = utils.regularize_H(H, n, args.sigma_reg)
     hatW, attr = quantize(H, W, args.lora_rank, cb, args, device)
     if len(scales) == 1:
         # fuse single scale into SV too

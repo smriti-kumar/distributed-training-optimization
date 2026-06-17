@@ -1,0 +1,11 @@
+QUIP# - Llama 2-7 2 bit
+
+  0%|          | 0/83 [00:00<?, ?it/s]I0617 12:38:29.429149 1128229 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 1.8217857544680676: 100%|██████████| 83/83 [01:18<00:00,  1.05it/s]
+I0617 12:39:39.091877 1128229 eval_ppl.py:63] wikitext2 perplexity: 6.182889938354492
+Downloading readme: 41.1kB [00:00, 24.9MB/s]
+Downloading data: 100%|██████████| 319M/319M [00:03<00:00, 93.9MB/s] 
+Generating train split: 356317 examples [00:07, 50199.08 examples/s]
+  0%|          | 0/256 [00:00<?, ?it/s]I0617 12:41:00.796528 1128229 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.0991103830747306: 100%|██████████| 256/256 [03:40<00:00,  1.16it/s]
+I0617 12:44:39.863962 1128229 eval_ppl.py:63] c4 perplexity: 8.158907890319824
