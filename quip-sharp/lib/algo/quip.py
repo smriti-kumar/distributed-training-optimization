@@ -492,7 +492,7 @@ def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
     # mu = H_data['mu']
     # H.add_(mu[None, :] * mu[:, None])
     # n = H_data['n']
-    H = torch.eye(weights[0].shape[1], dtype=H.dtype, device=H.device)
+    H = torch.eye(weights[0].shape[1], dtype=dtype_, device=device)
     W = torch.vstack([
         weights[i].to(dtype_) / scales[i] for i in range(len(weights))
     ]).to(dtype_)
