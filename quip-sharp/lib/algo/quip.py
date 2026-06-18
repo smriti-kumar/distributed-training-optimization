@@ -353,6 +353,69 @@ def LDLQ_buffered_lowmem(Wr, Hr, L, D, cb, args, buf_cols=128):
 
     return hatWr, Qidxs
 
+def hb_transform(x):
+    if len(x.shape) == 1:
+        x = x.view(1,-1)
+    (m,n) = x.shape
+    k = 1
+    while 4**k < n:
+        k += 1
+    assert(4**k == n)
+    b = torch.tensor([1,1,-1,-1]).to(x.dtype)
+    x = x.reshape((m,) + (4,)*k)
+    for i in range(k):
+        x = x.flip(1+i) + x * b.view((1,)*(i+1) + (4,) + (1,)*(k-1-i))
+    x = x.reshape((m,) + (2,2)*k)
+    x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
+    return x.reshape(m, 2**k, 2**k)
+
+def clique_quantize(Wr, codebook, device='cpu'):
+    dtype = Wr.dtype
+    m, n = Wr.shape
+    orig_m = m
+    orig_n = n
+    if m % 8 != 0:
+        m = m + 8 - (m % 8)
+    if n % 8 != 0:
+        n = n + 8 - (n % 8)
+    Wr = torch.nn.functional.pad(Wr, (0, m - orig_m, 0, n - orig_n), mode='constant', value=0.0)
+
+    mats = hb_transform(torch.eye(64, dtype=dtype, device=device))
+    cliques = [
+        [0, 2, 11, 25, 33, 39, 47, 57],
+        [1, 3, 10, 24, 32, 38, 46, 56],
+        [4, 6, 15, 29, 35, 37, 43, 61],
+        [5, 7, 14, 28, 34, 36, 42, 60],
+        [12, 18, 20, 26, 44, 53, 55, 62],
+        [13, 19, 21, 27, 45, 52, 54, 63],
+        [8, 16, 22, 30, 40, 49, 51, 58],
+        [9, 17, 23, 31, 41, 48, 50, 59]
+    ]
+
+    blocks = Wr.reshape(m // 8, 8, n // 8, 8).permute(0, 2, 1, 3) # (m//8, n//8, 8, 8)
+    blocks_flat = blocks.reshape(-1, 8, 8) # (num_blocks, 8, 8)
+    coeffs = torch.sum(blocks_flat.unsqueeze(1) * mats.unsqueeze(0), dim=(-2, -1)) # frobenius inner product for coeffs
+
+    coeffs_shuffled = torch.zeros((coeffs.shape[0], 64), dtype=coeffs.dtype, device=device)
+    for i, c in enumerate(cliques):
+        for j, mat in enumerate(c):
+            coeffs_shuffled[:, (i * 8) + j] = coeffs[:, mat]
+
+    hat_e8_outputs, Qidxs = codebook.quantize(coeffs_shuffled.reshape(-1, 8))
+
+    hat_coeffs = hat_e8_outputs.reshape(-1, 64)
+    hat_coeffs_unshuffled = torch.zeros((hat_coeffs.shape[0], 64), dtype=hat_coeffs.dtype, device=device)
+
+    for i, c in enumerate(cliques):
+        for j, mat in enumerate(c):
+            hat_coeffs_unshuffled[:, mat] = hat_coeffs[:, (i * 8) + j]
+
+    hat_blocks_flat = torch.sum(hat_coeffs_unshuffled.unsqueeze(-1).unsqueeze(-1) * mats.unsqueeze(0), dim=1)
+    hat_blocks = hat_blocks_flat.view(m // 8, n // 8, 8, 8)
+    hatWr = hat_blocks.permute(0, 2, 1, 3).reshape(m, n)
+    hatWr = hatWr[:orig_m, :orig_n]
+    
+    return hatWr, Qidxs
 
 def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     orig_device = H_orig.device
@@ -398,23 +461,58 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
         Wr, Hr = low_rank_preprocess(Wr, Hr, Lhr, args)
 
     # block LDL
-    block_LDL_out = utils.block_LDL(Hr, codebook.codesz)
-    if block_LDL_out is None:
-        if args.use_fp64:
-            raise Exception
-        new_args = copy.deepcopy(args)
-        new_args.use_fp64 = True
-        glog.info('block_LDL failed, recomputing in fp64')
-        del H, W, codebook, Lhr, Hr, Wr, SU, SV, scaleWH, Wo
-        utils.clean()
-        return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
+    # block_LDL_out = utils.block_LDL(Hr, codebook.codesz)
+    # if block_LDL_out is None:
+    #     if args.use_fp64:
+    #         raise Exception
+    #     new_args = copy.deepcopy(args)
+    #     new_args.use_fp64 = True
+    #     glog.info('block_LDL failed, recomputing in fp64')
+    #     del H, W, codebook, Lhr, Hr, Wr, SU, SV, scaleWH, Wo
+    #     utils.clean()
+    #     return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
 
-    L, D = block_LDL_out
-    del block_LDL_out
-    del H_orig, W_orig, codebook_orig
-    utils.clean()
+    # L, D = block_LDL_out
+    # del block_LDL_out
+    # del H_orig, W_orig, codebook_orig
+    # utils.clean()
 
-    # LDLQ
+    # # LDLQ
+    # Wscale = Wr.square().mean().sqrt()
+    # if args.scale_override > 0:
+    #     Wscale /= args.scale_override
+    # else:
+    #     Wscale /= codebook.opt_scale
+    # Wr = Wr / Wscale
+    # codebook = codebook.to(device)
+    # if args.no_use_buffered:
+    #     hatWr, Qidxs = LDLQ(Wr, Hr, L, D, codebook, args)
+    # elif args.lowmem_ldlq or args.use_fp64:
+    #     hatWr, Qidxs = LDLQ_buffered_lowmem(Wr,
+    #                                         Hr,
+    #                                         L,
+    #                                         D,
+    #                                         codebook,
+    #                                         args,
+    #                                         buf_cols=128)
+    # else:
+    #     hatWr, Qidxs = LDLQ_buffered(Wr,
+    #                                  Hr,
+    #                                  L,
+    #                                  D,
+    #                                  codebook,
+    #                                  args,
+    #                                  buf_cols=128)
+
+    # Wr = Wr.cpu()
+    # Hr = Hr.cpu()
+    # L = L.cpu()
+    # D = D.cpu()
+    # del Wr, Hr, L, D
+    # utils.clean()
+
+    # hatWr = hatWr * Wscale
+
     Wscale = Wr.square().mean().sqrt()
     if args.scale_override > 0:
         Wscale /= args.scale_override
@@ -422,32 +520,13 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
         Wscale /= codebook.opt_scale
     Wr = Wr / Wscale
     codebook = codebook.to(device)
-    if args.no_use_buffered:
-        hatWr, Qidxs = LDLQ(Wr, Hr, L, D, codebook, args)
-    elif args.lowmem_ldlq or args.use_fp64:
-        hatWr, Qidxs = LDLQ_buffered_lowmem(Wr,
-                                            Hr,
-                                            L,
-                                            D,
-                                            codebook,
-                                            args,
-                                            buf_cols=128)
-    else:
-        hatWr, Qidxs = LDLQ_buffered(Wr,
-                                     Hr,
-                                     L,
-                                     D,
-                                     codebook,
-                                     args,
-                                     buf_cols=128)
-
+    
+    hatWr, Qidxs = clique_quantize(Wr, codebook, device)
+    
     Wr = Wr.cpu()
     Hr = Hr.cpu()
-    L = L.cpu()
-    D = D.cpu()
-    del Wr, Hr, L, D
     utils.clean()
-
+    
     hatWr = hatWr * Wscale
 
     # low rank correction
