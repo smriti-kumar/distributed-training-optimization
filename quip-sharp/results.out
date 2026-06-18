@@ -9,3 +9,25 @@ Generating train split: 356317 examples [00:07, 50199.08 examples/s]
   0%|          | 0/256 [00:00<?, ?it/s]I0617 12:41:00.796528 1128229 graph_wrapper.py:36] Built CUDA graph of model.
 avg_loss = 2.0991103830747306: 100%|██████████| 256/256 [03:40<00:00,  1.16it/s]
 I0617 12:44:39.863962 1128229 eval_ppl.py:63] c4 perplexity: 8.158907890319824
+
+Quip# - Llama 2-7 2 bit - no adaptive rounding and no finetuning
+
+  0%|          | 0/83 [00:00<?, ?it/s]I0617 18:28:20.833326 3788986 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 5.112716249672763: 100%|██████████| 83/83 [01:17<00:00,  1.07it/s] 
+I0617 18:29:35.658231 3788986 eval_ppl.py:63] wikitext2 perplexity: 166.12095642089844
+  0%|          | 0/256 [00:00<?, ?it/s]I0617 18:31:10.178117 3788986 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 5.05574482306838: 100%|██████████| 256/256 [04:01<00:00,  1.06it/s]  
+I0617 18:35:10.250022 3788986 eval_ppl.py:63] c4 perplexity: 156.9213409423828
+
+ It is a truth universally acknowledged that the universe is a state of the world and it is a state of the universe. Cavallian and it is a state of the universe and it is a state of the universe and it is a state of the universe and it is a state of the universe and it is a state of the universe and it is a
+
+Quip# - Llama 2-7 2 bit - no adaptive rounding and 5 epochs of fintuning
+
+  0%|          | 0/83 [00:00<?, ?it/s]I0618 01:07:25.066321 1931637 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.74050772190094: 100%|██████████| 83/83 [01:13<00:00,  1.13it/s]  
+I0618 01:08:36.281148 1931637 eval_ppl.py:63] wikitext2 perplexity: 15.494848251342773
+  0%|          | 0/256 [00:00<?, ?it/s]I0618 01:10:08.336082 1931637 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.8889126679860055: 100%|██████████| 256/256 [03:42<00:00,  1.15it/s]
+I0618 01:13:50.009587 1931637 eval_ppl.py:63] c4 perplexity: 17.9737548828125
+
+It is a truth universally acknowledged that the man who is most vexed with the idea of a particular subject is the man who is most vexed with the idea of a particular subject.

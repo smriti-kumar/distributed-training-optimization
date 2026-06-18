@@ -508,5 +508,5 @@ def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
         'scales': scales,
     })
     torch.save(attr, save_path)
-    utils.show_metrics(hatW, W, H.to(dtype_), save_path)
+    # utils.show_metrics(hatW, W, H.cpu().to(dtype_), save_path)
     utils.clean()
