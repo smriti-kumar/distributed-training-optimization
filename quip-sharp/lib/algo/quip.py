@@ -361,7 +361,7 @@ def hb_transform(x):
     while 4**k < n:
         k += 1
     assert(4**k == n)
-    b = torch.tensor([1,1,-1,-1]).to(x.dtype)
+    b = torch.tensor([1,1,-1,-1], dtype=x.dtype, device=x.device)
     x = x.reshape((m,) + (4,)*k)
     for i in range(k):
         x = x.flip(1+i) + x * b.view((1,)*(i+1) + (4,) + (1,)*(k-1-i))
@@ -369,7 +369,7 @@ def hb_transform(x):
     x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
     return x.reshape(m, 2**k, 2**k)
 
-def clique_quantize(Wr, codebook, device='cpu'):
+def clique_quantize(Wr, codebook, device='cpu', buffer=16384):
     dtype = Wr.dtype
     m, n = Wr.shape
     orig_m = m
@@ -401,7 +401,18 @@ def clique_quantize(Wr, codebook, device='cpu'):
         for j, mat in enumerate(c):
             coeffs_shuffled[:, (i * 8) + j] = coeffs[:, mat]
 
-    hat_e8_outputs, Qidxs = codebook.quantize(coeffs_shuffled.reshape(-1, 8))
+    coeffs_shuffled_flat = coeffs_shuffled.reshape(-1, 8)
+    hat_e8_outputs = torch.zeros_like(coeffs_shuffled_flat)
+    Qidxs = torch.zeros(coeffs_shuffled_flat.shape[0], dtype=codebook.idx_dtype, device=device)
+
+    for i in range(0, coeffs_shuffled_flat.shape[0], buffer):
+        end = min(i + buffer, coeffs_shuffled_flat.shape[0])
+        curr = coeffs_shuffled_flat[i:end]
+        hat_out, qidxs_out = codebook.quantize(curr)
+        hat_e8_outputs[i:end] = hat_out
+        Qidxs[i:end] = qidxs_out
+        del curr, hat_out, qidxs_out
+        utils.clean()
 
     hat_coeffs = hat_e8_outputs.reshape(-1, 64)
     hat_coeffs_unshuffled = torch.zeros((hat_coeffs.shape[0], 64), dtype=hat_coeffs.dtype, device=device)
