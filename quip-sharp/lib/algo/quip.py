@@ -369,7 +369,7 @@ def hb_transform(x):
     x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
     return x.reshape(m, 2**k, 2**k)
 
-def clique_quantize(Wr, codebook, device='cpu', buffer=16384):
+def clique_quantize(Wr, codebook, device='cpu', buffer=1024):
     dtype = Wr.dtype
     m, n = Wr.shape
     orig_m = m
@@ -403,7 +403,7 @@ def clique_quantize(Wr, codebook, device='cpu', buffer=16384):
 
     coeffs_shuffled_flat = coeffs_shuffled.reshape(-1, 8)
     hat_e8_outputs = torch.zeros_like(coeffs_shuffled_flat)
-    Qidxs = torch.zeros(coeffs_shuffled_flat.shape[0], dtype=codebook.idx_dtype, device=device)
+    Qidxs = torch.zeros((coeffs_shuffled_flat.shape[0],), dtype=codebook.idx_dtype, device=device)
 
     for i in range(0, coeffs_shuffled_flat.shape[0], buffer):
         end = min(i + buffer, coeffs_shuffled_flat.shape[0])
@@ -425,8 +425,20 @@ def clique_quantize(Wr, codebook, device='cpu', buffer=16384):
     hat_blocks = hat_blocks_flat.view(m // 8, n // 8, 8, 8)
     hatWr = hat_blocks.permute(0, 2, 1, 3).reshape(m, n)
     hatWr = hatWr[:orig_m, :orig_n]
+
+    clique_idxs = Qidxs.view(coeffs_shuffled.shape[0], 8)
+    grid_idxs = torch.zeros((m // 8, n // 8, 8, 8), dtype=codebook.idx_dtype, device=device)
+    grid_idxs_flat = grid_idxs.view(coeffs_shuffled.shape[0], 64)
     
-    return hatWr, Qidxs
+    for i, c in enumerate(cliques):
+        for mat in c:
+            grid_idxs_flat[:, mat] = clique_idxs[:, i]
+            
+    spatial_idxs = grid_idxs[:, :, :, 0].permute(0, 2, 1).reshape(m, n // 8)
+    final_Qidxs = spatial_idxs[:orig_m, :orig_n // 8]
+    
+    return hatWr, final_Qidxs
+
 
 def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     orig_device = H_orig.device

@@ -235,7 +235,8 @@ def main(args):
 if __name__ == '__main__':
     torch.set_grad_enabled(False)
     mp.set_start_method('spawn')
-    mp.set_sharing_strategy('file_system')
+    # mp.set_sharing_strategy('file_system')
+    mp.set_sharing_strategy('file_descriptor')
     args = parser.parse_args()
     torch.manual_seed(args.seed)
     os.makedirs(args.save_path, exist_ok=True)
