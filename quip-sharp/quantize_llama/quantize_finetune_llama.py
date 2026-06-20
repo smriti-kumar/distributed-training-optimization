@@ -147,6 +147,7 @@ def main(args):
         'idx_dtype': str(cb.idx_dtype),
         'packsz': cb.packsz,
         'resid_scale_override': args.resid_scale_override,
+        'orth_quant': True,
     }
     all_config['model_config'].update({'quip_params': quip_params})
     torch.save(all_config, os.path.join(args.save_path, 'config.pt'))

@@ -58,6 +58,7 @@ if is_flash_attn_2_available():
 
 from lib.linear.fused_quantized_linear import FusedQuantizedLinear
 from lib.linear.quantized_linear import QuantizedLinear
+from lib.linear import FusedLinear 
 
     
 logger = logging.get_logger(__name__)
@@ -218,36 +219,81 @@ class LlamaMLP(nn.Module):
         self.config = config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.upgate_proj = FusedQuantizedLinear(
-            -1,
-            (self.intermediate_size, self.intermediate_size),
-            self.hidden_size,
-            self.intermediate_size * 2,
-            config.quip_params['codesz'],
-            config.quip_params.get('packsz', 1),
-            config.quip_params.get('pack_out', False),
-            config.quip_params['idx_dtype'],
-            config.quip_params.get('codebook_version', 0),
-            rank=config.quip_params['lora_rank'],
-            rescale_WH=config.quip_params['rescale_WH'],
-            resid_scale_override=config.quip_params.get(
-                'resid_scale_override', -1),
-            train_mode=config.quip_params.get('train_mode', False),
-        )
-        self.down_proj = QuantizedLinear(
-            self.intermediate_size,
-            self.hidden_size,
-            config.quip_params['codesz'],
-            config.quip_params.get('packsz', 1),
-            config.quip_params.get('pack_out', False),
-            config.quip_params['idx_dtype'],
-            config.quip_params.get('codebook_version', 0),
-            rank=self.config.quip_params['lora_rank'],
-            rescale_WH=self.config.quip_params['rescale_WH'],
-            resid_scale_override=config.quip_params.get(
-                'resid_scale_override', -1),
-            train_mode=config.quip_params.get('train_mode', False),
-        )
+        # self.upgate_proj = FusedQuantizedLinear(
+        #     -1,
+        #     (self.intermediate_size, self.intermediate_size),
+        #     self.hidden_size,
+        #     self.intermediate_size * 2,
+        #     config.quip_params['codesz'],
+        #     config.quip_params.get('packsz', 1),
+        #     config.quip_params.get('pack_out', False),
+        #     config.quip_params['idx_dtype'],
+        #     config.quip_params.get('codebook_version', 0),
+        #     rank=config.quip_params['lora_rank'],
+        #     rescale_WH=config.quip_params['rescale_WH'],
+        #     resid_scale_override=config.quip_params.get(
+        #         'resid_scale_override', -1),
+        #     train_mode=config.quip_params.get('train_mode', False),
+        # )
+        # self.down_proj = QuantizedLinear(
+        #     self.intermediate_size,
+        #     self.hidden_size,
+        #     config.quip_params['codesz'],
+        #     config.quip_params.get('packsz', 1),
+        #     config.quip_params.get('pack_out', False),
+        #     config.quip_params['idx_dtype'],
+        #     config.quip_params.get('codebook_version', 0),
+        #     rank=self.config.quip_params['lora_rank'],
+        #     rescale_WH=self.config.quip_params['rescale_WH'],
+        #     resid_scale_override=config.quip_params.get(
+        #         'resid_scale_override', -1),
+        #     train_mode=config.quip_params.get('train_mode', False),
+        # )
+        orth_mode = config.quip_params.get('orth_quant', False)
+        if orth_mode:
+            self.upgate_proj = FusedLinear(
+                -1,
+                (self.intermediate_size, self.intermediate_size),
+                self.hidden_size,
+                self.intermediate_size * 2,
+                bias=False,
+            )
+            self.down_proj = nn.Linear(
+                self.intermediate_size,
+                self.hidden_size,
+                bias=False,
+            )
+        else:
+            self.upgate_proj = FusedQuantizedLinear(
+                -1,
+                (self.intermediate_size, self.intermediate_size),
+                self.hidden_size,
+                self.intermediate_size * 2,
+                config.quip_params['codesz'],
+                config.quip_params.get('packsz', 1),
+                config.quip_params.get('pack_out', False),
+                config.quip_params['idx_dtype'],
+                config.quip_params.get('codebook_version', 0),
+                rank=config.quip_params['lora_rank'],
+                rescale_WH=config.quip_params['rescale_WH'],
+                resid_scale_override=config.quip_params.get(
+                    'resid_scale_override', -1),
+                train_mode=config.quip_params.get('train_mode', False),
+            )
+            self.down_proj = QuantizedLinear(
+                self.intermediate_size,
+                self.hidden_size,
+                config.quip_params['codesz'],
+                config.quip_params.get('packsz', 1),
+                config.quip_params.get('pack_out', False),
+                config.quip_params['idx_dtype'],
+                config.quip_params.get('codebook_version', 0),
+                rank=self.config.quip_params['lora_rank'],
+                rescale_WH=self.config.quip_params['rescale_WH'],
+                resid_scale_override=config.quip_params.get(
+                    'resid_scale_override', -1),
+                train_mode=config.quip_params.get('train_mode', False),
+            )
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
@@ -298,40 +344,90 @@ class LlamaAttention(nn.Module):
                 f" and `num_heads`: {self.num_heads})."
             )
 
-        self.qkv_proj = FusedQuantizedLinear(
-            -1,
-            (self.num_heads * self.head_dim, self.num_key_value_heads *
-             self.head_dim, self.num_key_value_heads * self.head_dim),
-            self.hidden_size,
-            (self.num_heads * self.head_dim) +
-            (self.num_key_value_heads * self.head_dim) +
-            (self.num_key_value_heads * self.head_dim),
-            config.quip_params['codesz'],
-            config.quip_params.get('packsz', 1),
-            config.quip_params.get('pack_out', False),
-            config.quip_params['idx_dtype'],
-            config.quip_params.get('codebook_version', 0),
-            rank=config.quip_params['lora_rank'],
-            rescale_WH=config.quip_params['rescale_WH'],
-            resid_scale_override=config.quip_params.get(
-                'resid_scale_override', -1),
-            train_mode=config.quip_params.get('train_mode', False),
-        )
+        # self.qkv_proj = FusedQuantizedLinear(
+        #     -1,
+        #     (self.num_heads * self.head_dim, self.num_key_value_heads *
+        #      self.head_dim, self.num_key_value_heads * self.head_dim),
+        #     self.hidden_size,
+        #     (self.num_heads * self.head_dim) +
+        #     (self.num_key_value_heads * self.head_dim) +
+        #     (self.num_key_value_heads * self.head_dim),
+        #     config.quip_params['codesz'],
+        #     config.quip_params.get('packsz', 1),
+        #     config.quip_params.get('pack_out', False),
+        #     config.quip_params['idx_dtype'],
+        #     config.quip_params.get('codebook_version', 0),
+        #     rank=config.quip_params['lora_rank'],
+        #     rescale_WH=config.quip_params['rescale_WH'],
+        #     resid_scale_override=config.quip_params.get(
+        #         'resid_scale_override', -1),
+        #     train_mode=config.quip_params.get('train_mode', False),
+        # )
 
-        self.o_proj = QuantizedLinear(
-            self.num_heads * self.head_dim,
-            self.hidden_size,
-            config.quip_params['codesz'],
-            config.quip_params.get('packsz', 1),
-            config.quip_params.get('pack_out', False),
-            config.quip_params['idx_dtype'],
-            config.quip_params.get('codebook_version', 0),
-            rank=config.quip_params['lora_rank'],
-            rescale_WH=config.quip_params['rescale_WH'],
-            resid_scale_override=config.quip_params.get(
-                'resid_scale_override', -1),
-            train_mode=config.quip_params.get('train_mode', False),
-        )
+        # self.o_proj = QuantizedLinear(
+        #     self.num_heads * self.head_dim,
+        #     self.hidden_size,
+        #     config.quip_params['codesz'],
+        #     config.quip_params.get('packsz', 1),
+        #     config.quip_params.get('pack_out', False),
+        #     config.quip_params['idx_dtype'],
+        #     config.quip_params.get('codebook_version', 0),
+        #     rank=config.quip_params['lora_rank'],
+        #     rescale_WH=config.quip_params['rescale_WH'],
+        #     resid_scale_override=config.quip_params.get(
+        #         'resid_scale_override', -1),
+        #     train_mode=config.quip_params.get('train_mode', False),
+        # )
+        # self._init_rope()
+        orth_mode = config.quip_params.get('orth_quant', False)
+        qkv_out_sizes = (self.num_heads * self.head_dim,
+                        self.num_key_value_heads * self.head_dim,
+                        self.num_key_value_heads * self.head_dim)
+        qkv_total_out = sum(qkv_out_sizes)
+        if orth_mode:
+            self.qkv_proj = FusedLinear(
+                -1,
+                qkv_out_sizes,
+                self.hidden_size,
+                qkv_total_out,
+                bias=False,
+            )
+            self.o_proj = nn.Linear(
+                self.num_heads * self.head_dim,
+                self.hidden_size,
+                bias=False,
+            )
+        else:
+            self.qkv_proj = FusedQuantizedLinear(
+                -1,
+                qkv_out_sizes,
+                self.hidden_size,
+                qkv_total_out,
+                config.quip_params['codesz'],
+                config.quip_params.get('packsz', 1),
+                config.quip_params.get('pack_out', False),
+                config.quip_params['idx_dtype'],
+                config.quip_params.get('codebook_version', 0),
+                rank=config.quip_params['lora_rank'],
+                rescale_WH=config.quip_params['rescale_WH'],
+                resid_scale_override=config.quip_params.get(
+                    'resid_scale_override', -1),
+                train_mode=config.quip_params.get('train_mode', False),
+            )
+            self.o_proj = QuantizedLinear(
+                self.num_heads * self.head_dim,
+                self.hidden_size,
+                config.quip_params['codesz'],
+                config.quip_params.get('packsz', 1),
+                config.quip_params.get('pack_out', False),
+                config.quip_params['idx_dtype'],
+                config.quip_params.get('codebook_version', 0),
+                rank=config.quip_params['lora_rank'],
+                rescale_WH=config.quip_params['rescale_WH'],
+                resid_scale_override=config.quip_params.get(
+                    'resid_scale_override', -1),
+                train_mode=config.quip_params.get('train_mode', False),
+            )
         self._init_rope()
 
     def _init_rope(self):
