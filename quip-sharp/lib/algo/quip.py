@@ -367,9 +367,9 @@ def hb_transform(x):
         x = x.flip(1+i) + x * b.view((1,)*(i+1) + (4,) + (1,)*(k-1-i))
     x = x.reshape((m,) + (2,2)*k)
     x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
-    return x.reshape(m, 2**k, 2**k)
+    return x.reshape(m, 2**k, 2**k) / (2**k)
 
-def clique_quantize(Wr, codebook, device='cpu', buffer=1024):
+def clique_quantize(Wr, codebook, device='cpu', buffer=4096):
     dtype = Wr.dtype
     m, n = Wr.shape
     orig_m = m
@@ -378,9 +378,22 @@ def clique_quantize(Wr, codebook, device='cpu', buffer=1024):
         m = m + 8 - (m % 8)
     if n % 8 != 0:
         n = n + 8 - (n % 8)
-    Wr = torch.nn.functional.pad(Wr, (0, m - orig_m, 0, n - orig_n), mode='constant', value=0.0)
+    Wr = torch.nn.functional.pad(Wr, (0, n - orig_n, 0, m - orig_m), mode='constant', value=0.0)
+    glog.info(f"m: {m}")
+    glog.info(f"orig_m: {orig_m}")
+    glog.info(f"n: {n}")
+    glog.info(f"orig_n: {orig_n}")
+
+    # need to add Hr as a parameter for the method - this is for adaptive rounding
+    # if Hr.shape[0] < n:
+    #     pad_size = n - Hr.shape[0]
+    #     Hr = torch.nn.functional.pad(Hr, (0, pad_size, 0, pad_size), mode='constant', value=0.0)
+    #     for i in range(orig_n, n):
+    #         Hr[i, i] = 1
 
     mats = hb_transform(torch.eye(64, dtype=dtype, device=device))
+    norm = (mats[0] * mats[0]).sum()
+
     cliques = [
         [0, 2, 11, 25, 33, 39, 47, 57],
         [1, 3, 10, 24, 32, 38, 46, 56],
@@ -394,7 +407,10 @@ def clique_quantize(Wr, codebook, device='cpu', buffer=1024):
 
     blocks = Wr.reshape(m // 8, 8, n // 8, 8).permute(0, 2, 1, 3) # (m//8, n//8, 8, 8)
     blocks_flat = blocks.reshape(-1, 8, 8) # (num_blocks, 8, 8)
-    coeffs = torch.sum(blocks_flat.unsqueeze(1) * mats.unsqueeze(0), dim=(-2, -1)) # frobenius inner product for coeffs
+    coeffs = torch.sum(blocks_flat.unsqueeze(1) * mats.unsqueeze(0), dim=(-2, -1)) / torch.sqrt(norm)  # frobenius inner product for coeffs
+
+    glog.info(f"Wr (input to clique_quantize) mean square: {(Wr**2).mean().item()}")
+    glog.info(f"coeffs mean square: {(coeffs**2).mean().item()}")
 
     coeffs_shuffled = torch.zeros((coeffs.shape[0], 64), dtype=coeffs.dtype, device=device)
     for i, c in enumerate(cliques):
@@ -402,45 +418,45 @@ def clique_quantize(Wr, codebook, device='cpu', buffer=1024):
             coeffs_shuffled[:, (i * 8) + j] = coeffs[:, mat]
 
     coeffs_shuffled_flat = coeffs_shuffled.reshape(-1, 8)
-    hat_e8_outputs = torch.zeros_like(coeffs_shuffled_flat)
-    Qidxs = torch.zeros((coeffs_shuffled_flat.shape[0],), dtype=codebook.idx_dtype, device=device)
+    hat_e8_out = torch.zeros_like(coeffs_shuffled_flat)
+    qidxs_out = torch.zeros((coeffs_shuffled_flat.shape[0],), dtype=codebook.idx_dtype, device=device)
 
+    glog.info("before codebook quantizing in clique quantize")
+    
     for i in range(0, coeffs_shuffled_flat.shape[0], buffer):
         end = min(i + buffer, coeffs_shuffled_flat.shape[0])
-        curr = coeffs_shuffled_flat[i:end]
-        hat_out, qidxs_out = codebook.quantize(curr)
-        hat_e8_outputs[i:end] = hat_out
-        Qidxs[i:end] = qidxs_out
-        del curr, hat_out, qidxs_out
-        utils.clean()
+        curr_chunk = coeffs_shuffled_flat[i:end]
+        hat_chunk, qidxs_chunk = codebook.quantize(curr_chunk)        
+        hat_e8_out[i:end] = hat_chunk
+        qidxs_out[i:end] = qidxs_chunk.squeeze()
+        del curr_chunk, hat_chunk, qidxs_chunk
+        torch.cuda.empty_cache()
 
-    hat_coeffs = hat_e8_outputs.reshape(-1, 64)
-    hat_coeffs_unshuffled = torch.zeros((hat_coeffs.shape[0], 64), dtype=hat_coeffs.dtype, device=device)
+    glog.info("after codebook quantizing in clique quantize")
 
+    hat_coeffs = hat_e8_out.reshape(-1, 64)
+    hat_coeffs_unshuffled = torch.zeros_like(hat_coeffs)
     for i, c in enumerate(cliques):
         for j, mat in enumerate(c):
             hat_coeffs_unshuffled[:, mat] = hat_coeffs[:, (i * 8) + j]
 
-    hat_blocks_flat = torch.sum(hat_coeffs_unshuffled.unsqueeze(-1).unsqueeze(-1) * mats.unsqueeze(0), dim=1)
+    hat_blocks_flat = torch.sum(hat_coeffs_unshuffled.unsqueeze(-1).unsqueeze(-1) * mats.unsqueeze(0), dim=1) / torch.sqrt(norm)
     hat_blocks = hat_blocks_flat.view(m // 8, n // 8, 8, 8)
     hatWr = hat_blocks.permute(0, 2, 1, 3).reshape(m, n)
     hatWr = hatWr[:orig_m, :orig_n]
 
-    clique_idxs = Qidxs.view(coeffs_shuffled.shape[0], 8)
-    grid_idxs = torch.zeros((m // 8, n // 8, 8, 8), dtype=codebook.idx_dtype, device=device)
-    grid_idxs_flat = grid_idxs.view(coeffs_shuffled.shape[0], 64)
-    
-    for i, c in enumerate(cliques):
-        for mat in c:
-            grid_idxs_flat[:, mat] = clique_idxs[:, i]
-            
-    spatial_idxs = grid_idxs[:, :, :, 0].permute(0, 2, 1).reshape(m, n // 8)
+    glog.info(f"Difference between wr and hatwr: {(Wr - hatWr).abs().max() / Wr.abs().max()}")
+
+    clique_idxs = qidxs_out.view(coeffs_shuffled.shape[0], 8)
+    spatial_idxs = clique_idxs.reshape(m // 8, n // 8, 8)
+    spatial_idxs = spatial_idxs.permute(0, 2, 1).reshape(m, n // 8)
     final_Qidxs = spatial_idxs[:orig_m, :orig_n // 8]
     
     return hatWr, final_Qidxs
 
 
 def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
+    glog.info("at the top of quantize")
     orig_device = H_orig.device
     W_orig_dtype = W_orig.dtype
     dtype_ = torch.float64 if args.use_fp64 else torch.float32
@@ -466,6 +482,7 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
         del H, W, codebook
         utils.clean()
         return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
+    glog.info("done with incoherence processing")
 
     Lhr, Hr, Wr, SU, SV, scaleWH = incoh_out
     del incoh_out
@@ -542,9 +559,13 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     else:
         Wscale /= codebook.opt_scale
     Wr = Wr / Wscale
+    glog.info("scaled Wr")
     codebook = codebook.to(device)
+    glog.info("created codebook")
     
+    glog.info("right before calling clique quantize from quantize")
     hatWr, Qidxs = clique_quantize(Wr, codebook, device)
+    glog.info("right after calling clique quantize from quantize")
     
     Wr = Wr.cpu()
     Hr = Hr.cpu()
@@ -562,11 +583,13 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
 
     # reverse incoherence process
     hatW = incoherence_process(hatWr, SU, SV, scaleWH, args)
+    glog.info("reverse incoherence processing done")
 
     Qidxs = codebook.maybe_pack_idxs(Qidxs)
 
     attr = {
         'Qidxs': Qidxs.to(orig_device),
+        'hatW': hatW.half().to(orig_device),
         'A': A,
         'B': B,
         'SU': SU.to(torch.float16).to(orig_device),
@@ -577,10 +600,12 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
 
     utils.clean()
 
+    glog.info("right before returning from quantize")
     return hatW.to(W_orig_dtype).to(orig_device), attr
 
 
 def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
+    glog.info("top of quantize linear")
     dtype_ = torch.float64 if args.use_fp64 else torch.float32
 
     shapes = [_.shape for _ in weights]
@@ -595,11 +620,14 @@ def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
     # H.add_(mu[None, :] * mu[:, None])
     # n = H_data['n']
     H = torch.eye(weights[0].shape[1], dtype=dtype_, device=device)
+    glog.info("set H to identity")
     W = torch.vstack([
         weights[i].to(dtype_) / scales[i] for i in range(len(weights))
     ]).to(dtype_)
     # H = utils.regularize_H(H, n, args.sigma_reg)
+    glog.info("right before calling quantize from quantize linear")
     hatW, attr = quantize(H, W, args.lora_rank, cb, args, device)
+    glog.info("right after calling quantize from quantize linear")
     if len(scales) == 1:
         # fuse single scale into SV too
         attr['SV'] *= scales[0]
@@ -610,5 +638,6 @@ def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
         'scales': scales,
     })
     torch.save(attr, save_path)
+    glog.info("saved weights to save path")
     # utils.show_metrics(hatW, W, H.cpu().to(dtype_), save_path)
     utils.clean()

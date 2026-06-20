@@ -4,12 +4,14 @@ import time
 
 import glog
 import torch
+import torch.nn as nn
 from transformers import AutoTokenizer
 
 from lib import codebook, utils
 from lib.utils.unsafe_import import model_from_hf_path
 from model.llama import LlamaForCausalLM
 from lib.utils.model_version import MODEL_VERSION
+from lib.linear import *
 
 torch.set_grad_enabled(False)
 
@@ -17,6 +19,35 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--quantized_path', type=str)
 parser.add_argument('--hf_output_path', type=str)
 
+def linear_from_saved(saved_layer):
+    hatW = saved_layer['hatW'].float()
+    shapes = saved_layer['shapes']
+    scales = saved_layer['scales']
+ 
+    in_dim = shapes[0][1]
+    out_dims = []
+    for s in shapes:
+        out_dims.append(s[0])
+    total_out = sum(out_dims)
+ 
+    curr = 0
+    pieces = []
+    for shape, scale in zip(shapes, scales):
+        out_dim = shape[0]
+        piece = hatW[curr:curr + out_dim] * scale
+        pieces.append(piece)
+        curr += out_dim
+    full_weight = torch.cat(pieces, dim=0)
+ 
+    if saved_layer['fused']:
+        dense_linear = FusedLinear(-1, out_dims, in_dim, total_out, bias=False)
+    else:
+        dense_linear = nn.Linear(in_dim, total_out, bias=False)
+ 
+    with torch.no_grad():
+        dense_linear.weight.copy_(full_weight)
+ 
+    return dense_linear.half()
 
 def main(args):
     assert os.path.exists(args.quantized_path)
@@ -52,29 +83,33 @@ def main(args):
 
         saved_layer = torch.load(f'{args.quantized_path}/{ii}_qkv.pt',
                                  map_location=cpu)
-        for i in range(len(saved_layer['scales'])):
-            layer.self_attn.qkv_proj.fuse_scales[i].copy_(
-                saved_layer['scales'][i])
-        utils.unpack_quip(layer.self_attn.qkv_proj, saved_layer, codebook_id,
-                          codesz)
+        layer.self_attn.qkv_proj = linear_from_saved(saved_layer)
+        # for i in range(len(saved_layer['scales'])):
+        #     layer.self_attn.qkv_proj.fuse_scales[i].copy_(
+        #         saved_layer['scales'][i])
+        # utils.unpack_quip(layer.self_attn.qkv_proj, saved_layer, codebook_id,
+        #                   codesz)
 
         saved_layer = torch.load(f'{args.quantized_path}/{ii}_o.pt',
                                  map_location=cpu)
-        utils.unpack_quip(layer.self_attn.o_proj, saved_layer, codebook_id,
-                          codesz)
+        layer.self_attn.o_proj = linear_from_saved(saved_layer)
+        # utils.unpack_quip(layer.self_attn.o_proj, saved_layer, codebook_id,
+        #                   codesz)
 
         saved_layer = torch.load(f'{args.quantized_path}/{ii}_up.pt',
                                  map_location=cpu)
-        for i in range(len(saved_layer['scales'])):
-            layer.mlp.upgate_proj.fuse_scales[i].copy_(
-                saved_layer['scales'][i])
-        utils.unpack_quip(layer.mlp.upgate_proj, saved_layer, codebook_id,
-                          codesz)
+        layer.mlp.upgate_proj = linear_from_saved(saved_layer)
+        # for i in range(len(saved_layer['scales'])):
+        #     layer.mlp.upgate_proj.fuse_scales[i].copy_(
+        #         saved_layer['scales'][i])
+        # utils.unpack_quip(layer.mlp.upgate_proj, saved_layer, codebook_id,
+        #                   codesz)
 
         saved_layer = torch.load(f'{args.quantized_path}/{ii}_down.pt',
                                  map_location=cpu)
-        utils.unpack_quip(layer.mlp.down_proj, saved_layer, codebook_id,
-                          codesz)
+        layer.mlp.down_proj = linear_from_saved(saved_layer)
+        # utils.unpack_quip(layer.mlp.down_proj, saved_layer, codebook_id,
+        #                   codesz)
         glog.info(f'loaded layer {ii} down')
 
     glog.info(f'saving model...')

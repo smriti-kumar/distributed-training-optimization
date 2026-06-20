@@ -66,6 +66,34 @@ def finetune_decoder_layer(layer, name, device, train_dl, valid_dl, args):
     utils.clean()
     layer = layer.cpu()
 
+def linear_from_hatw(saved_linear):
+    hatW = saved_linear['hatW'].float()
+    shapes = saved_linear['shapes']
+    scales = saved_linear['scales']
+ 
+    in_dim = shapes[0][1]
+    out_dims = [s[0] for s in shapes]
+    total_out = sum(out_dims)
+    cur = 0
+    pieces = []
+    for shape, scale in zip(shapes, scales):
+        out_dim = shape[0]
+        piece = hatW[cur:cur + out_dim] * scale
+        pieces.append(piece)
+        cur += out_dim
+    full_weight = torch.cat(pieces, dim=0)
+    assert full_weight.shape == (total_out, in_dim), \
+        f"shape mismatch: full_weight {full_weight.shape} vs expected {(total_out, in_dim)}"
+ 
+    if saved_linear['fused']:
+        dense_linear = FusedLinear(-1, out_dims, in_dim, total_out, bias=False)
+    else:
+        dense_linear = nn.Linear(in_dim, total_out, bias=False)
+ 
+    with torch.no_grad():
+        dense_linear.weight.copy_(full_weight)
+ 
+    return dense_linear
 
 def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
                                     device, pre_orig_emb, orig_emb):
@@ -106,39 +134,44 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
                                  device)
             saved_linear = torch.load(save_path,
                                       map_location=torch.device('cpu'))
-            if saved_linear['fused']:
-                quant_linear = FusedQuantizedLinear(
-                    -1, [_[0] for _ in saved_linear['shapes']],
-                    saved_linear['shapes'][0][1],
-                    sum([_[0] for _ in saved_linear['shapes']]), *shared_args,
-                    **shared_kwargs)
-                for i in range(len(saved_linear['scales'])):
-                    quant_linear.fuse_scales[i].copy_(
-                        saved_linear['scales'][i])
-            else:
-                quant_linear = QuantizedLinear(saved_linear['shapes'][0][1],
-                                               saved_linear['shapes'][0][0],
-                                               *shared_args, **shared_kwargs)
-            utils.unpack_quip(quant_linear, saved_linear, codebook_id,
-                              cb.codesz)
-        quant_linear.SU = nn.Parameter(quant_linear.SU.float(),
-                                       requires_grad=True)
-        quant_linear.SV = nn.Parameter(quant_linear.SV.float(),
-                                       requires_grad=True)
+            dense_linear = linear_from_hatw(saved_linear)
         split_attr = linear_attr.split('.')
         setattr(
             attrgetter('.'.join(split_attr[:-1]))(mixed_layer), split_attr[-1],
-            quant_linear)
-        if quant_i < len(quant_order) - 1:
-            finetune_decoder_layer(mixed_layer, f'{idx}_{name}', device,
-                                   train_dl, valid_dl, args)
+            dense_linear)
+    #         if saved_linear['fused']:
+    #             quant_linear = FusedQuantizedLinear(
+    #                 -1, [_[0] for _ in saved_linear['shapes']],
+    #                 saved_linear['shapes'][0][1],
+    #                 sum([_[0] for _ in saved_linear['shapes']]), *shared_args,
+    #                 **shared_kwargs)
+    #             for i in range(len(saved_linear['scales'])):
+    #                 quant_linear.fuse_scales[i].copy_(
+    #                     saved_linear['scales'][i])
+    #         else:
+    #             quant_linear = QuantizedLinear(saved_linear['shapes'][0][1],
+    #                                            saved_linear['shapes'][0][0],
+    #                                            *shared_args, **shared_kwargs)
+    #         utils.unpack_quip(quant_linear, saved_linear, codebook_id,
+    #                           cb.codesz)
+    #     quant_linear.SU = nn.Parameter(quant_linear.SU.float(),
+    #                                    requires_grad=True)
+    #     quant_linear.SV = nn.Parameter(quant_linear.SV.float(),
+    #                                    requires_grad=True)
+    #     split_attr = linear_attr.split('.')
+    #     setattr(
+    #         attrgetter('.'.join(split_attr[:-1]))(mixed_layer), split_attr[-1],
+    #         quant_linear)
+    #     if quant_i < len(quant_order) - 1:
+    #         finetune_decoder_layer(mixed_layer, f'{idx}_{name}', device,
+    #                                train_dl, valid_dl, args)
 
-    with torch.no_grad():
-        utils.clean()
-        for i, (linear_attr, name) in enumerate(quant_order):
-            utils.save_susv(
-                attrgetter(linear_attr)(mixed_layer),
-                f'{args.save_path}/{idx}_{name}.pt')
+    # with torch.no_grad():
+    #     utils.clean()
+    #     for i, (linear_attr, name) in enumerate(quant_order):
+    #         utils.save_susv(
+    #             attrgetter(linear_attr)(mixed_layer),
+    #             f'{args.save_path}/{idx}_{name}.pt')
 
     mixed_layer = mixed_layer.to(torch.float16).cpu()
     utils.clean()
