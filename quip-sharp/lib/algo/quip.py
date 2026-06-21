@@ -628,10 +628,10 @@ def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
     glog.info("right before calling quantize from quantize linear")
     hatW, attr = quantize(H, W, args.lora_rank, cb, args, device)
     glog.info("right after calling quantize from quantize linear")
-    if len(scales) == 1:
-        # fuse single scale into SV too
-        attr['SV'] *= scales[0]
-        scales = [1.0]
+    # if len(scales) == 1:
+    #     # fuse single scale into SV too
+    #     attr['SV'] *= scales[0]
+    #     scales = [1.0]
     attr.update({
         'fused': len(shapes) > 1,
         'shapes': shapes,
