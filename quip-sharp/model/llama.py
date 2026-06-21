@@ -58,7 +58,7 @@ if is_flash_attn_2_available():
 
 from lib.linear.fused_quantized_linear import FusedQuantizedLinear
 from lib.linear.quantized_linear import QuantizedLinear
-from lib.linear import FusedLinear 
+from lib.linear import FusedLinear, OrthLinear
 
     
 logger = logging.get_logger(__name__)
@@ -258,7 +258,7 @@ class LlamaMLP(nn.Module):
                 self.intermediate_size * 2,
                 bias=False,
             )
-            self.down_proj = nn.Linear(
+            self.down_proj = OrthLinear(
                 self.intermediate_size,
                 self.hidden_size,
                 bias=False,
@@ -392,7 +392,7 @@ class LlamaAttention(nn.Module):
                 qkv_total_out,
                 bias=False,
             )
-            self.o_proj = nn.Linear(
+            self.o_proj = OrthLinear(
                 self.num_heads * self.head_dim,
                 self.hidden_size,
                 bias=False,

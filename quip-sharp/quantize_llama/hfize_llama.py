@@ -42,7 +42,7 @@ def linear_from_saved(saved_layer):
     if saved_layer['fused']:
         dense_linear = FusedLinear(-1, out_dims, in_dim, total_out, bias=False)
     else:
-        dense_linear = nn.Linear(in_dim, total_out, bias=False)
+        dense_linear = OrthLinear(in_dim, total_out, bias=False)
  
     with torch.no_grad():
         dense_linear.weight.copy_(full_weight)

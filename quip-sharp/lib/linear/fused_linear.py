@@ -11,5 +11,5 @@ class FusedLinear(nn.Linear):
         self.n = len(self.fuse_sizes)
 
     def forward(self, input):
-        fused_output = super(FusedLinear, self).forward(input)
+        fused_output = super(FusedLinear, self).forward(input.to(self.weight.dtype))
         return torch.split(fused_output, self.fuse_sizes, self.fuse_dim)
