@@ -114,7 +114,6 @@ def main(args):
 
     glog.info(f'saving model...')
     model.save_pretrained(args.hf_output_path, safe_serialization=True)
-    tokenizer.save_pretrained(args.hf_output_path)
 
     del model
 
