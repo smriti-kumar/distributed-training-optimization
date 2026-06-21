@@ -384,13 +384,6 @@ def clique_quantize(Wr, codebook, device='cpu', buffer=4096):
     glog.info(f"n: {n}")
     glog.info(f"orig_n: {orig_n}")
 
-    # need to add Hr as a parameter for the method - this is for adaptive rounding
-    # if Hr.shape[0] < n:
-    #     pad_size = n - Hr.shape[0]
-    #     Hr = torch.nn.functional.pad(Hr, (0, pad_size, 0, pad_size), mode='constant', value=0.0)
-    #     for i in range(orig_n, n):
-    #         Hr[i, i] = 1
-
     mats = hb_transform(torch.eye(64, dtype=dtype, device=device))
     norm = (mats[0] * mats[0]).sum()
 
@@ -445,7 +438,7 @@ def clique_quantize(Wr, codebook, device='cpu', buffer=4096):
     hatWr = hat_blocks.permute(0, 2, 1, 3).reshape(m, n)
     hatWr = hatWr[:orig_m, :orig_n]
 
-    glog.info(f"Difference between wr and hatwr: {(Wr - hatWr).abs().max() / Wr.abs().max()}")
+    glog.info(f"difference between wr and hatwr: {(Wr - hatWr).abs().max() / Wr.abs().max()}")
 
     clique_idxs = qidxs_out.view(coeffs_shuffled.shape[0], 8)
     spatial_idxs = clique_idxs.reshape(m // 8, n // 8, 8)
@@ -454,6 +447,93 @@ def clique_quantize(Wr, codebook, device='cpu', buffer=4096):
     
     return hatWr, final_Qidxs
 
+def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
+    dtype = Wr.dtype
+    m, n = Wr.shape
+    orig_m = m
+    orig_n = n
+    if m % 8 != 0:
+        m = m + 8 - (m % 8)
+    if n % 8 != 0:
+        n = n + 8 - (n % 8)
+    Wr = torch.nn.functional.pad(Wr, (0, n - orig_n, 0, m - orig_m), mode='constant', value=0.0)
+    glog.info(f"m: {m}")
+    glog.info(f"orig_m: {orig_m}")
+    glog.info(f"n: {n}")
+    glog.info(f"orig_n: {orig_n}")
+
+    if Hr.shape[0] < n: # not mn bc rows are independent so those would be 0 anyways
+        pad_size = n - Hr.shape[0]
+        Hr = torch.nn.functional.pad(Hr, (0, pad_size, 0, pad_size), mode='constant', value=0.0)
+        for i in range(orig_n, n):
+            Hr[i, i] = 1
+    
+    L = torch.linalg.cholesky(Hr)
+
+    hatWr = torch.zeros(m, n, dtype=dtype, device=device)
+    Qidxs_blocks = torch.zeros(m // 8, n // 8, 8, dtype=codebook.idx_dtype, device=device)
+
+    mats = hb_transform(torch.eye(64, dtype=dtype, device=device))
+    norm = (mats[0] * mats[0]).sum()
+
+    cliques = [
+        [0, 2, 11, 25, 33, 39, 47, 57],
+        [1, 3, 10, 24, 32, 38, 46, 56],
+        [4, 6, 15, 29, 35, 37, 43, 61],
+        [5, 7, 14, 28, 34, 36, 42, 60],
+        [12, 18, 20, 26, 44, 53, 55, 62],
+        [13, 19, 21, 27, 45, 52, 54, 63],
+        [8, 16, 22, 30, 40, 49, 51, 58],
+        [9, 17, 23, 31, 41, 48, 50, 59]
+    ]
+
+    glog.info("before quantization col loop in clique quantize rounding")
+
+    for col in reversed(range(n // 8)): # since ldlq does it in reverse
+        cstart = col * 8
+        cend = cstart + 8
+        Hr_block = Hr[cstart:cend, cstart:cend]
+
+        glog.info("before quantization row loop in clique quantize rounding")
+
+        for row in range(m // 8):
+            rstart = row * 8
+            rend = rstart + 8
+            Wr_block = Wr[rstart:rend, cstart:cend]
+
+            correction = torch.zeros(8, 8, dtype=dtype, device=device)
+            if cend < n: # stuff was quantized to the right and need to find offset
+                correction = (Wr[rstart:rend, cend:] - hatWr[rstart:rend, cend:]) @ L[cend:, cstart:cend] # inspired by LDLQ
+            
+            target = Wr_block + correction
+            coeffs = torch.sum(target.unsqueeze(0) * mats, dim=(-2, -1)) / torch.sqrt(norm)
+
+            hat_coeffs = torch.zeros(64, dtype=dtype, device=device)
+
+            glog.info("before quantization clique loop in clique quantize rounding")
+
+            for clique in range(8):
+                curr_coeffs = coeffs[cliques[clique]]
+                if clique != 0: # don't adaptive round for first clique, need to correct for other cliques after first
+                    clique_correction = torch.zeros(8, dtype=dtype, device=device)
+                    for i in range(clique):
+                        prev_err = coeffs[cliques[i]] - hat_coeffs[cliques[i]]
+                        clique_correction += torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_block, mats[cliques[i]]) @ prev_err # using mats for both cliques for the Hessian based rounding
+                    curr_coeffs += clique_correction
+                
+                hat_clique, qidx = codebook.quantize(curr_coeffs.unsqueeze(0))
+                hat_coeffs[cliques[clique]] = hat_clique.squeeze(0)
+                Qidxs_blocks[row, col, clique] = qidx.squeeze()
+            
+            hatWr[rstart:rend, cstart:cend] = torch.sum(hat_coeffs.view(64, 1, 1) * mats, dim=0) / torch.sqrt(norm)
+
+    glog.info(f"difference between wr and hatwr: {(Wr - hatWr).abs().max() / Wr.abs().max()}")
+
+    hatWr = hatWr[:orig_m, :orig_n]
+    final_Qidxs = Qidxs_blocks.unsqueeze(1).expand(-1, 8, -1, -1).reshape(m, n)
+    final_Qidxs = final_Qidxs[:orig_m, :orig_n // 8]
+    
+    return hatWr, final_Qidxs
 
 def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     glog.info("at the top of quantize")
@@ -564,7 +644,8 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     glog.info("created codebook")
     
     glog.info("right before calling clique quantize from quantize")
-    hatWr, Qidxs = clique_quantize(Wr, codebook, device)
+    # hatWr, Qidxs = clique_quantize(Wr, codebook, device)
+    hatWr, Qidxs = clique_quantize_rounding(Wr, Hr, codebook, device)
     glog.info("right after calling clique quantize from quantize")
     
     Wr = Wr.cpu()
@@ -614,17 +695,17 @@ def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
     if os.path.exists(save_path):
         return
 
-    # H_data = torch.load(hessian_path, map_location=torch.device('cpu'))
-    # H = utils.flat_to_sym(H_data['flatH'], H_data['n'])
-    # mu = H_data['mu']
-    # H.add_(mu[None, :] * mu[:, None])
-    # n = H_data['n']
-    H = torch.eye(weights[0].shape[1], dtype=dtype_, device=device)
+    H_data = torch.load(hessian_path, map_location=torch.device('cpu'))
+    H = utils.flat_to_sym(H_data['flatH'], H_data['n'])
+    mu = H_data['mu']
+    H.add_(mu[None, :] * mu[:, None])
+    n = H_data['n']
+    # H = torch.eye(weights[0].shape[1], dtype=dtype_, device=device)
     glog.info("set H to identity")
     W = torch.vstack([
         weights[i].to(dtype_) / scales[i] for i in range(len(weights))
     ]).to(dtype_)
-    # H = utils.regularize_H(H, n, args.sigma_reg)
+    H = utils.regularize_H(H, n, args.sigma_reg)
     glog.info("right before calling quantize from quantize linear")
     hatW, attr = quantize(H, W, args.lora_rank, cb, args, device)
     glog.info("right after calling quantize from quantize linear")
