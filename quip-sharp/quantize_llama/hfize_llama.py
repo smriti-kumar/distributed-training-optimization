@@ -54,8 +54,8 @@ def main(args):
     saved_config = torch.load(os.path.join(args.quantized_path, 'config.pt'))
     model_config = saved_config['model_config']
 
-    codebook_id = codebook.get_id(model_config.quip_params['codebook'])
-    codesz = model_config.quip_params['codesz']
+    # codebook_id = codebook.get_id(model_config.quip_params['codebook'])
+    # codesz = model_config.quip_params['codesz']
 
     tokenizer = AutoTokenizer.from_pretrained(model_config._name_or_path)
 
@@ -114,6 +114,7 @@ def main(args):
 
     glog.info(f'saving model...')
     model.save_pretrained(args.hf_output_path, safe_serialization=True)
+    tokenizer.save_pretrained(args.hf_output_path)
 
     del model
 

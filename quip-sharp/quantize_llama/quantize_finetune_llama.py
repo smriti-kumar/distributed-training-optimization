@@ -150,6 +150,7 @@ def main(args):
         'orth_quant': True,
     }
     all_config['model_config'].update({'quip_params': quip_params})
+    all_config['model_config'].orth_quant = True
     torch.save(all_config, os.path.join(args.save_path, 'config.pt'))
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)

@@ -249,7 +249,7 @@ class LlamaMLP(nn.Module):
         #         'resid_scale_override', -1),
         #     train_mode=config.quip_params.get('train_mode', False),
         # )
-        orth_mode = config.quip_params.get('orth_quant', False)
+        orth_mode = getattr(config, 'orth_quant', False)
         if orth_mode:
             self.upgate_proj = FusedLinear(
                 -1,
@@ -379,7 +379,7 @@ class LlamaAttention(nn.Module):
         #     train_mode=config.quip_params.get('train_mode', False),
         # )
         # self._init_rope()
-        orth_mode = config.quip_params.get('orth_quant', False)
+        orth_mode = getattr(config, 'orth_quant', False)
         qkv_out_sizes = (self.num_heads * self.head_dim,
                         self.num_key_value_heads * self.head_dim,
                         self.num_key_value_heads * self.head_dim)
