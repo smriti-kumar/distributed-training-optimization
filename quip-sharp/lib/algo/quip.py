@@ -493,10 +493,10 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
         cstart = col * 8
         cend = cstart + 8
         Hr_block = Hr[cstart:cend, cstart:cend]
-        S, V = torch.linalg.eigh(Hr_block)
-        S_sqrt = torch.sqrt(torch.clamp(S, min=1e-12)) # dont want to take sqrt of negative eigenvalues
-        Hr_sqrt = V @ torch.diag(S_sqrt) @ V.T
-        tr_H_sqrt = torch.diagonal(Hr_sqrt).sum()
+        # S, V = torch.linalg.eigh(Hr_block)
+        # S_sqrt = torch.sqrt(torch.clamp(S, min=0)) # dont want to take sqrt of negative eigenvalues just in case
+        # Hr_sqrt = V @ torch.diag(S_sqrt) @ V.T
+        # tr_H_sqrt = torch.diagonal(Hr_sqrt).sum()
 
         # glog.info("before quantization row loop in clique quantize rounding")
 
@@ -515,8 +515,9 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
                 clique_corrections = torch.zeros(m // 8, 8, dtype=dtype, device=device)
                 for i in range(clique):
                     prev_errs = coeffs[:, cliques[i]] - hat_coeffs[:, cliques[i]]
-                    correction_trace = torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_sqrt, mats[cliques[i]]) / tr_H_sqrt
-                    clique_corrections += prev_errs @ correction_trace.T
+                    # correction_trace = torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_sqrt, mats[cliques[i]]) / tr_H_sqrt
+                    # clique_corrections += prev_errs @ correction_trace.T
+                    clique_corrections += prev_errs @ torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_block, mats[cliques[i]]).T
                 curr_coeffs += clique_corrections
             
             hat_clique, qidx = codebook.quantize(curr_coeffs)
@@ -583,21 +584,28 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     assert (torch.all(torch.isfinite(W.cpu())))
 
     # incoherence preprocessing
-    incoh_out = incoherence_preprocess(H, W, args)
-    if incoh_out is None:
-        if args.use_fp64:
-            raise Exception
-        new_args = copy.deepcopy(args)
-        new_args.use_fp64 = True
-        glog.info('incoherence_preprocess failed, recomputing in fp64')
-        del H, W, codebook
-        utils.clean()
-        return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
-    glog.info("done with incoherence processing")
+    # incoh_out = incoherence_preprocess(H, W, args)
+    # if incoh_out is None:
+    #     if args.use_fp64:
+    #         raise Exception
+    #     new_args = copy.deepcopy(args)
+    #     new_args.use_fp64 = True
+    #     glog.info('incoherence_preprocess failed, recomputing in fp64')
+    #     del H, W, codebook
+    #     utils.clean()
+    #     return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
+    # glog.info("done with incoherence processing")
 
-    Lhr, Hr, Wr, SU, SV, scaleWH = incoh_out
-    del incoh_out
-    utils.clean()
+    # Lhr, Hr, Wr, SU, SV, scaleWH = incoh_out
+    # del incoh_out
+    # utils.clean()
+
+    Wr = W # no incoherence processing
+    Hr = H
+    SU = torch.ones(n, dtype=dtype_, device=device)
+    SV = torch.ones(m, dtype=dtype_, device=device)
+    scaleWH = None
+    Lhr = torch.linalg.cholesky(Hr) # no incoherence processing
 
     glog.info(f'mean square of W: {W.square().mean()}')
     glog.info(f'mean square of Wr: {Wr.square().mean()}')
@@ -694,8 +702,10 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
         A, B = None, None
 
     # reverse incoherence process
-    hatW = incoherence_process(hatWr, SU, SV, scaleWH, args)
-    glog.info("reverse incoherence processing done")
+    # hatW = incoherence_process(hatWr, SU, SV, scaleWH, args)
+    # glog.info("reverse incoherence processing done")
+
+    hatW = hatWr # no incoherence processing
 
     Qidxs = codebook.maybe_pack_idxs(Qidxs)
 
