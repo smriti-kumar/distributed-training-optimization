@@ -493,11 +493,15 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
         cstart = col * 8
         cend = cstart + 8
         Hr_block = Hr[cstart:cend, cstart:cend]
+        S, V = torch.linalg.eigh(Hr_block)
+        S_sqrt = torch.sqrt(torch.clamp(S, min=1e-12)) # dont want to take sqrt of negative eigenvalues
+        Hr_sqrt = V @ torch.diag(S_sqrt) @ V.T
+        tr_H_sqrt = torch.diagonal(Hr_sqrt).sum()
 
         # glog.info("before quantization row loop in clique quantize rounding")
 
         corrections = torch.zeros(m, 8, dtype=dtype, device=device)
-        if cend < n:
+        if cend < n: # stuff was quantized to the right and need to find offset
             corrections = (Wr[:, cend:] - hatWr[:, cend:]) @ L[cend:, cstart:cend]
 
         targets = Wr[:, cstart:cend] + corrections
@@ -507,11 +511,12 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
 
         for clique in range(8):
             curr_coeffs = coeffs[:, cliques[clique]]
-            if clique != 0:
+            if clique != 0: # don't adaptive round for first clique, need to correct for other cliques after first
                 clique_corrections = torch.zeros(m // 8, 8, dtype=dtype, device=device)
                 for i in range(clique):
                     prev_errs = coeffs[:, cliques[i]] - hat_coeffs[:, cliques[i]]
-                    clique_corrections += prev_errs @ torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_block, mats[cliques[i]]).T
+                    correction_trace = torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_sqrt, mats[cliques[i]]) / tr_H_sqrt
+                    clique_corrections += prev_errs @ correction_trace.T
                 curr_coeffs += clique_corrections
             
             hat_clique, qidx = codebook.quantize(curr_coeffs)
