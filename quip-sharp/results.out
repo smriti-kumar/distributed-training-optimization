@@ -34,67 +34,25 @@ It is a truth universally acknowledged that the man who is most vexed with the i
 
 Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques, no rounding and no finetuning
 
-  0%|          | 0/83 0/83 ¡00:00<?, ?it/s¿I0621 12:16:33.577235 268574 graph_wrapper.py:36¿ Built CUDA graph of model.
-avg_loss = 4.931748393070267: 100%°██████████° 83/83 ¡00:43<00:00,  1.90it/s¿ 
-I0621 12:17:14.036257 268574 eval_ppl.py:63¿ wikitext2 perplexity: 138.6216583251953
-  0%|          | 0/83 0/256 ¡00:00<?, ?it/s¿I0621 12:18:47.619639 268574 graph_wrapper.py:36¿ Built CUDA graph of model.
-avg_loss = 4.789530142210424: 100%°██████████° 256/256 ¡02:10<00:00,  1.96it/s¿ 
-I0621 12:20:57.376341 268574 eval_ppl.py:63¿ c4 perplexity: 120.244873046875
+  0%|          | 0/83 [00:00<?, ?it/s]I0621 12:16:33.577235 268574 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 4.931748393070267: 100%|██████████| 83/83 [00:43<00:00,  1.90it/s] 
+I0621 12:17:14.036257 268574 eval_ppl.py:63] wikitext2 perplexity: 138.6216583251953
+  0%|          | 0/256 [00:00<?, ?it/s]I0621 12:18:47.619639 268574 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 4.789530142210424: 100%|██████████| 256/256 [02:10<00:00,  1.96it/s] 
+I0621 12:20:57.376341 268574 eval_ppl.py:63] c4 perplexity: 120.244873046875
 
 It is a truth universally acknowledged that the most important issue in this context is that the system is not what it is supposed to be.CG.
 The most important problem is that the system is not what it is supposed to be.
 I think the most important problem is that the system is not what it is supposed to be.
 The most important
 
-FAILURE: Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques, no rounding and no finetuning
+Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques and with adaptive rounding and no finetuning
 
-  0%|          | 0/83 [00:00<?, ?it/s]I0619 13:33:44.072405 2738530 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 13.58589085038886: 100%|██████████| 83/83 [01:11<00:00,  1.16it/s] 
-I0619 13:34:53.358825 2738530 eval_ppl.py:63] wikitext2 perplexity: 794835.75
-  0%|          | 0/256 [00:00<?, ?it/s]I0619 13:36:25.229370 2738530 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 13.530806057155132: 100%|██████████| 256/256 [03:36<00:00,  1.18it/s]
-I0619 13:40:00.840164 2738530 eval_ppl.py:63] c4 perplexity: 752236.125
+  0%|          | 0/83 [00:00<?, ?it/s]I0621 23:53:22.039921 2489186 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.0614464153726417: 100%|██████████| 83/83 [00:43<00:00,  1.92it/s]
+I0621 23:54:03.459848 2489186 eval_ppl.py:63] wikitext2 perplexity: 7.857326507568359
+  0%|          | 0/256 [00:00<?, ?it/s]I0621 23:55:13.124200 2489186 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.328509786631912: 100%|██████████| 256/256 [02:14<00:00,  1.90it/s] 
+I0621 23:57:26.941532 2489186 eval_ppl.py:63] c4 perplexity: 10.2626371383667
 
-It is a truth universally acknowledged thatGestcopearus цljen categoríaány handsskuaugsku BahnGestotaugaug Rib цskuskuSem dead krebahnskuot Sue цSemGest bleGestGestỳGestекaugSemSem Sue行ot RibotGestRIPTot行кет  spect stoletíGest Catherineot dobleileisku行otGestSem Sue
-
-FAILURE: Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques, no rounding and no finetuning
-
-  0%|          | 0/83 [00:00<?, ?it/s]I0619 16:37:03.828487 4163831 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 13.143479944711709: 100%|██████████| 83/83 [01:11<00:00,  1.17it/s]
-I0619 16:38:12.884154 4163831 eval_ppl.py:63] wikitext2 perplexity: 510670.71875
-  0%|          | 0/256 [00:00<?, ?it/s]I0619 16:39:45.014870 4163831 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 12.941692426800728: 100%|██████████| 256/256 [03:36<00:00,  1.18it/s]
-I0619 16:43:20.448010 4163831 eval_ppl.py:63] c4 perplexity: 417354.96875
-
-It is a truth universally acknowledged that▲▲Bar³ื▲▲▲▲▲▲isiónื onderwerp▲ély▲▲▲▲▲▲▲ván▲▲▲FolderBarische▲ély▲▲ély▲ Bald▲ืvilélyély▲łoż▲³▲ische▲▲▲ Bald tid▲▲▲▲ onderwerpván tidély▲élyื
-
-FAILURE: Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques, no rounding and no finetuning
-
-  0%|          | 0/83 [00:00<?, ?it/s]I0619 19:43:42.134579 3314396 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 12.244680289762567: 100%|██████████| 83/83 [01:11<00:00,  1.17it/s]
-I0619 19:44:51.281063 3314396 eval_ppl.py:63] wikitext2 perplexity: 207872.546875
-  0%|          | 0/256 [00:00<?, ?it/s]I0619 19:46:14.289395 3314396 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 11.992522448301315: 100%|██████████| 256/256 [03:37<00:00,  1.18it/s]
-I0619 19:49:50.817849 3314396 eval_ppl.py:63] c4 perplexity: 161542.296875
-
-It is a truth universally acknowledged thatfürürfürürfürfürfür residfürfürfüriewfürürfürfürfürfürfürfürürfürfüriekürfürfürterefürfürfürfürür residfürклаfür residfürfürfürfürfürfürfürfürfürterefürfürfür residfürfürLongrightarrowfürfürfürfürfürterefürfürкла
-
-FAILURE: Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques, no rounding and 5 epochs of finetuning
-
-  0%|          | 0/83 [00:00<?, ?it/s]I0620 01:27:32.041996 2223373 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 10.834322033158267: 100%|██████████| 83/83 [01:22<00:00,  1.01it/s]
-I0620 01:28:45.016965 2223373 eval_ppl.py:63] wikitext2 perplexity: 50732.5
-  0%|          | 0/256 [00:00<?, ?it/s]I0620 01:30:32.872887 2223373 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 10.396957494318485: 100%|██████████| 256/256 [03:52<00:00,  1.10it/s]
-I0620 01:34:24.146132 2223373 eval_ppl.py:63] c4 perplexity: 32759.798828125
-
-It is a truth universally acknowledged that and and in in and and the a and in and, and and, (,,, and and,,, and,,,, and and,, in, and and, in, and,,,, (, and,, ( in,,,,,, and and and,,,
-
-FAILURE: Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques, no rounding and 5 epochs of finetuning, divide by sqrt of norm twice and dividing just coeffs by sqrt of norm
-
-  0%|          | 0/83 [00:00<?, ?it/s]I0620 13:32:34.238363 2675496 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 12.205494558954813: 100%|██████████| 83/83 [01:17<00:00,  1.07it/s]
-I0620 13:33:49.578948 2675496 eval_ppl.py:63] wikitext2 perplexity: 199884.484375
-  0%|          | 0/256 [00:00<?, ?it/s]I0620 13:35:16.376878 2675496 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 12.14751123264432: 100%|██████████| 256/256 [03:59<00:00,  1.07it/s] 
-I0620 13:39:14.216030 2675496 eval_ppl.py:63] c4 perplexity: 188624.109375
+It is a truth universally acknowledged that the most important part of a book is its title. It is a truth universally acknowledged that the most important part of a book is its title. It is a truth universally acknowledged that the most important part of a book is its title. It is a truth universally acknowledged that the most important part
