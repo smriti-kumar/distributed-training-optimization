@@ -496,36 +496,60 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
 
         # glog.info("before quantization row loop in clique quantize rounding")
 
-        for row in range(m // 8):
-            rstart = row * 8
-            rend = rstart + 8
-            Wr_block = Wr[rstart:rend, cstart:cend]
+        corrections = torch.zeros(m, 8, dtype=dtype, device=device)
+        if cend < n:
+            corrections = (Wr[:, cend:] - hatWr[:, cend:]) @ L[cend:, cstart:cend]
 
-            correction = torch.zeros(8, 8, dtype=dtype, device=device)
-            if cend < n: # stuff was quantized to the right and need to find offset
-                correction = (Wr[rstart:rend, cend:] - hatWr[rstart:rend, cend:]) @ L[cend:, cstart:cend] # inspired by LDLQ
+        targets = Wr[:, cstart:cend] + corrections
+        coeffs = torch.sum(targets.view(m // 8, 8, 8).unsqueeze(1) * mats.unsqueeze(0), dim=(-2, -1)) / torch.sqrt(norm)
+
+        hat_coeffs = torch.zeros(m // 8, 64, dtype=dtype, device=device)
+
+        for clique in range(8):
+            curr_coeffs = coeffs[:, cliques[clique]]
+            if clique != 0:
+                clique_corrections = torch.zeros(m // 8, 8, dtype=dtype, device=device)
+                for i in range(clique):
+                    prev_errs = coeffs[:, cliques[i]] - hat_coeffs[:, cliques[i]]
+                    clique_corrections += prev_errs @ torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_block, mats[cliques[i]]).T
+                curr_coeffs += clique_corrections
             
-            target = Wr_block + correction
-            coeffs = torch.sum(target.unsqueeze(0) * mats, dim=(-2, -1)) / torch.sqrt(norm)
+            hat_clique, qidx = codebook.quantize(curr_coeffs)
+            hat_coeffs[:, cliques[clique]] = hat_clique
+            Qidxs_blocks[:, col, clique] = qidx.view(m // 8)
+        
+        hatWr[:, cstart:cend] = torch.sum(hat_coeffs.view(m // 8, 64, 1, 1) * mats.unsqueeze(0), dim=1).reshape(m, 8) / torch.sqrt(norm)
 
-            hat_coeffs = torch.zeros(64, dtype=dtype, device=device)
+        # for row in range(m // 8):
+        #     rstart = row * 8
+        #     rend = rstart + 8
+        #     Wr_block = Wr[rstart:rend, cstart:cend]
 
-            # glog.info("before quantization clique loop in clique quantize rounding")
+        #     correction = torch.zeros(8, 8, dtype=dtype, device=device)
+        #     if cend < n: # stuff was quantized to the right and need to find offset
+        #         correction = (Wr[rstart:rend, cend:] - hatWr[rstart:rend, cend:]) @ L[cend:, cstart:cend] # inspired by LDLQ
+            
+        #     target = Wr_block + correction
+        #     coeffs = torch.sum(target.unsqueeze(0) * mats, dim=(-2, -1)) / torch.sqrt(norm)
 
-            for clique in range(8):
-                curr_coeffs = coeffs[cliques[clique]]
-                if clique != 0: # don't adaptive round for first clique, need to correct for other cliques after first
-                    clique_correction = torch.zeros(8, dtype=dtype, device=device)
-                    for i in range(clique):
-                        prev_err = coeffs[cliques[i]] - hat_coeffs[cliques[i]]
-                        clique_correction += torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_block, mats[cliques[i]]) @ prev_err # using mats for both cliques for the Hessian based rounding
-                    curr_coeffs += clique_correction
+        #     hat_coeffs = torch.zeros(64, dtype=dtype, device=device)
+
+        #     # glog.info("before quantization clique loop in clique quantize rounding")
+
+        #     for clique in range(8):
+        #         curr_coeffs = coeffs[cliques[clique]]
+        #         if clique != 0: # don't adaptive round for first clique, need to correct for other cliques after first
+        #             clique_correction = torch.zeros(8, dtype=dtype, device=device)
+        #             for i in range(clique):
+        #                 prev_err = coeffs[cliques[i]] - hat_coeffs[cliques[i]]
+        #                 clique_correction += torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_block, mats[cliques[i]]) @ prev_err # using mats for both cliques for the Hessian based rounding
+        #             curr_coeffs += clique_correction
                 
-                hat_clique, qidx = codebook.quantize(curr_coeffs.unsqueeze(0))
-                hat_coeffs[cliques[clique]] = hat_clique.squeeze(0)
-                Qidxs_blocks[row, col, clique] = qidx.squeeze()
+        #         hat_clique, qidx = codebook.quantize(curr_coeffs.unsqueeze(0))
+        #         hat_coeffs[cliques[clique]] = hat_clique.squeeze(0)
+        #         Qidxs_blocks[row, col, clique] = qidx.squeeze()
             
-            hatWr[rstart:rend, cstart:cend] = torch.sum(hat_coeffs.view(64, 1, 1) * mats, dim=0) / torch.sqrt(norm)
+        #     hatWr[rstart:rend, cstart:cend] = torch.sum(hat_coeffs.view(64, 1, 1) * mats, dim=0) / torch.sqrt(norm)
     
     glog.info("done with all loops in clique quantize rounding")
 
