@@ -494,7 +494,7 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
         cend = cstart + 8
         Hr_block = Hr[cstart:cend, cstart:cend]
 
-        glog.info("before quantization row loop in clique quantize rounding")
+        # glog.info("before quantization row loop in clique quantize rounding")
 
         for row in range(m // 8):
             rstart = row * 8
@@ -510,7 +510,7 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
 
             hat_coeffs = torch.zeros(64, dtype=dtype, device=device)
 
-            glog.info("before quantization clique loop in clique quantize rounding")
+            # glog.info("before quantization clique loop in clique quantize rounding")
 
             for clique in range(8):
                 curr_coeffs = coeffs[cliques[clique]]
@@ -526,6 +526,8 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
                 Qidxs_blocks[row, col, clique] = qidx.squeeze()
             
             hatWr[rstart:rend, cstart:cend] = torch.sum(hat_coeffs.view(64, 1, 1) * mats, dim=0) / torch.sqrt(norm)
+    
+    glog.info("done with all loops in clique quantize rounding")
 
     glog.info(f"difference between wr and hatwr: {(Wr - hatWr).abs().max() / Wr.abs().max()}")
 
