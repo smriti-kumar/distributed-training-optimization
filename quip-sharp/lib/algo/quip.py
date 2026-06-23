@@ -620,19 +620,6 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
         Hr = Hr / scaleWH[:, None]
         scaleWH = scaleWH.cpu()
 
-    if args.incoh_mode == "had":
-        SU = (torch.randn(n, device=device).sign() + 1e-5).sign().to(dtype_)
-        SV = (torch.randn(m, device=device).sign() + 1e-5).sign().to(dtype_)
-        Hr = RHT_H(Hr, SU)
-        Wr = RHT_W(Wr, SU, SV)
-    elif args.incoh_mode == "kron":
-        SU = utils.rand_ortho_butterfly_noblock(n).to(dtype_).to(device)
-        SV = utils.rand_ortho_butterfly_noblock(m).to(dtype_).to(device)
-        Hr = SU @ Hr @ SU.T
-        Wr = SV @ Wr @ SU.T
-    else:
-        raise NotImplementedError
-    
     SV = SV.cpu()
     SU = SU.cpu()
 
