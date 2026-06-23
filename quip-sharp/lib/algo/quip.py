@@ -606,7 +606,7 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     scaleWH = None
     Wr = W
     Hr = H
-    
+
     if args.rescale_WH:
         Hr = H / H.abs().max()
         diagH = torch.diag(Hr)
@@ -713,6 +713,7 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     else:
         Wscale /= codebook.opt_scale
     Wr = Wr / Wscale
+    Hr = Hr / (Wscale ** 2) # no incoherence processing
     glog.info("scaled Wr")
     codebook = codebook.to(device)
     glog.info("created codebook")
