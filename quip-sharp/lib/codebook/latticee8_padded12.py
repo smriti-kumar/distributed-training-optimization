@@ -223,8 +223,15 @@ class E8P12_codebook(nn.Module):
         W_decompressed = quiptools_cuda.decompress_packed_e8p(
             idxs.view(m // 16, n // 2, 8, 4), self.grid_packed_abs)
         return W_decompressed
-
-
+    
+    def get_neighbors(self, idx):
+        first_8 = idx >> 8
+        second_8 = idx & 255
+        flip_mask = torch.tensor([0b00000001, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000, 0b01000000, 0b10000000], dtype=idx.dtype, device=idx.device)
+        flipped_second_8 = second_8.unsqueeze(-1) ^ flip_mask
+        neighbors = (first_8.unsqueeze(-1) << 8) | flipped_second_8 # combine first 8 bits with flipped second 8 bits
+        neighbor_values = self.grid[neighbors.long()]    
+        return neighbors, neighbor_values
     
 class QuantizedE8P12Linear(nn.Module):
 

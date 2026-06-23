@@ -166,6 +166,31 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
     #         finetune_decoder_layer(mixed_layer, f'{idx}_{name}', device,
     #                                train_dl, valid_dl, args)
 
+    if args.sparse_ft_epochs > 0:
+        sparse_state = {}
+        for linear_attr, name in quant_order:
+            save_path = f'{args.save_path}/{idx}_{name}.pt'
+            saved_linear = torch.load(save_path, map_location=torch.device('cpu'))
+            state = build_clique_state(saved_linear, device)
+            state['codebook'] = cb
+            sparse_state[name] = state
+ 
+        mixed_layer = sparse_finetune_layer(mixed_layer, quant_order, sparse_state, device, train_dl, valid_dl, args)
+
+        for linear_attr, name in quant_order:
+            save_path = f'{args.save_path}/{idx}_{name}.pt'
+            saved_linear = torch.load(save_path, map_location=torch.device('cpu'))
+            state = sparse_state[name]
+            from lib.algo.quip import incoherence_process
+            new_hatW = incoherence_process(
+                state['hatWr'], state['SU'].to(device), state['SV'].to(device),
+                state.get('scaleWH'), args)
+            orig_m, orig_n = state['orig_shape']
+            saved_linear['hatW'] = new_hatW[:orig_m, :orig_n].half().cpu()
+            saved_linear['hatWr'] = state['hatWr'].cpu()
+            saved_linear['Qidxs_blocks'] = state['Qidxs_blocks'].cpu()
+            torch.save(saved_linear, save_path)
+
     # with torch.no_grad():
     #     utils.clean()
     #     for i, (linear_attr, name) in enumerate(quant_order):
@@ -176,7 +201,6 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
     mixed_layer = mixed_layer.to(torch.float16).cpu()
     utils.clean()
     torch.set_grad_enabled(False)
-
 
 def finetune_susv_e2e(model, orig_logits, emb, position_ids, attention_mask,
                       save_fn, args):
@@ -241,3 +265,141 @@ def finetune_susv_e2e(model, orig_logits, emb, position_ids, attention_mask,
     with torch.no_grad():
         model.load_state_dict(best_sd)
         save_fn(model)
+
+def build_clique_state(saved_linear, device):
+    dtype = saved_linear['hatW'].dtype
+    mats = quip.hb_transform(torch.eye(64, dtype=dtype, device=device))
+    norm = (mats[0] * mats[0]).sum()
+ 
+    cliques = [
+        [0, 2, 11, 25, 33, 39, 47, 57],
+        [1, 3, 10, 24, 32, 38, 46, 56],
+        [4, 6, 15, 29, 35, 37, 43, 61],
+        [5, 7, 14, 28, 34, 36, 42, 60],
+        [12, 18, 20, 26, 44, 53, 55, 62],
+        [13, 19, 21, 27, 45, 52, 54, 63],
+        [8, 16, 22, 30, 40, 49, 51, 58],
+        [9, 17, 23, 31, 41, 48, 50, 59]
+    ]
+ 
+    if saved_linear['fused']:
+        out_dims = [s[0] for s in saved_linear['shapes']]
+        in_dim = saved_linear['shapes'][0][1]
+        orig_shape = (sum(out_dims), in_dim)
+    else:
+        orig_shape = saved_linear['shapes'][0]
+ 
+    return {
+        'hatWr': saved_linear['hatWr'].to(device).clone(),
+        'Qidxs_blocks': saved_linear['Qidxs_blocks'].to(device).clone(),
+        'SU': saved_linear['SU'],
+        'SV': saved_linear['SV'],
+        'scaleWH': saved_linear.get('scaleWH'),
+        'mats': mats,
+        'cliques': cliques,
+        'norm': norm,
+        'momentum': None,
+        'orig_shape': orig_shape,
+    }
+
+def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_dl, valid_dl, args):
+    mixed_layer = mixed_layer.to(device)
+    momentum_rate = args.sparse_ft_momentum_rate
+
+    for epoch in range(args.sparse_ft_epochs):
+        mixed_layer.zero_grad()
+        source, target = next(iter(train_dl))
+        output = mixed_layer(source.to(device), position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
+        loss = torch.nn.MSELoss()(output, target.to(device))
+        loss.backward()
+
+        glog.info(f"epoch {epoch}, loss: {loss.item()}")
+
+        for quant_i, (linear_attr, name) in enumerate(quant_order):
+            module = attrgetter(linear_attr)(mixed_layer)
+            state = clique_state[name]
+            grad_hatW = module.weight.grad.detach().to(state['hatWr'].dtype)
+            
+            if args.incoh_mode == 'had': # since indices are based on the incoherence processed weights, need to transform gradients too
+                grad_Wr = quip.RHT_W(grad_hatW, state['SU'].to(device), state['SV'].to(device))
+            elif args.incoh_mode == 'kron':
+                grad_Wr = state['SV'].to(device) @ grad_hatW @ state['SU'].to(device).T
+            else:
+                raise NotImplementedError
+
+            m = state['Qidxs_blocks'].shape[0] * 8
+            n = state['Qidxs_blocks'].shape[1] * 8
+
+            if grad_Wr.shape[0] < m or grad_Wr.shape[1] < n:
+                grad_Wr = torch.nn.functional.pad(grad_Wr, (0, n - grad_Wr.shape[1], 0, m - grad_Wr.shape[0]), value=0.0)
+            
+            gm, gn = grad_Wr.shape[0], grad_Wr.shape[1]
+            grad_blocks = grad_Wr.reshape(gm // 8, 8, gn // 8, 8).permute(0, 2, 1, 3)
+            grad_coeffs = torch.sum(grad_blocks.unsqueeze(2) * state['mats'].view(1, 1, *state['mats'].shape), dim=(-2, -1)) / torch.sqrt(state['norm'])
+            grad_clique_coeffs_list = []
+            for c in range(8):
+                grad_clique_coeffs_list.append(grad_coeffs[:, :, state['cliques'][c]])
+            grad_clique_coeffs = torch.stack(grad_clique_coeffs_list, dim=2)
+
+            if state['momentum'] is None:
+                state['momentum'] = torch.zeros_like(grad_clique_coeffs)
+            state['momentum'] = momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_clique_coeffs
+            momentum = state['momentum']
+
+            neighbors, neighbor_values = state['codebook'].get_neighbors(state['Qidxs_blocks']) # (m // 8, n // 8, 8, 8), (m // 8, n // 8, 8, 8, 8)
+            curr_values = state['codebook'].grid[state['Qidxs_blocks'].long()] # (m // 8, n // 8, 8, 8)
+
+            scores = torch.einsum('rcok,rcobk->rcob', momentum, neighbor_values - curr_values.unsqueeze(3)) # vectorized form of taking inner product of momentum and flipping each bit
+
+            if args.sparse_ft_flip_range == "blocks":
+                flat_scores = scores.reshape(m * n // 64, 64)
+                vals, min_i = torch.topk(flat_scores, args.num_flips, dim=1, largest=False)
+                cliques = min_i // 8
+                bits = min_i % 8
+                blocks = torch.arange(m * n // 64, device=device).unsqueeze(1).expand(-1, args.num_flips)
+                rows = blocks // (n // 8)
+                cols = blocks % (n // 8)
+            else: # flip across entire weight matrix
+                flat_scores = scores.reshape(-1)
+                vals, min_i = torch.topk(flat_scores, args.num_flips, largest=False) # want most negative scores, means change and momentum disagree so we should flip
+                bits = min_i % 8
+                remainder = min_i // 8
+                cliques = remainder % 8
+                remainder = remainder // 8
+                cols = remainder % (n // 8)
+                rows = remainder // (n // 8)
+
+            bits = bits.reshape(-1)
+            cliques = cliques.reshape(-1)
+            cols = cols.reshape(-1)
+            rows = rows.reshape(-1)
+
+            seen_block_cliques = set() # don't want to make 2 changes within the same clique for a given block
+            flip = torch.zeros(rows.shape[0], dtype=torch.bool)
+            for i in range(rows.shape[0]):
+                if (rows[i].item(), cols[i].item(), cliques[i].item()) not in seen_block_cliques:
+                    seen_block_cliques.add((rows[i].item(), cols[i].item(), cliques[i].item()))
+                    flip[i] = True
+            rows = rows[flip]
+            cols = cols[flip]
+            cliques = cliques[flip]
+            bits = bits[flip]
+
+            state['Qidxs_blocks'][rows, cols, cliques] = neighbors[rows, cols, cliques, bits]
+
+            modified_blocks = sorted(set(zip(rows.tolist(), cols.tolist())))
+            for (r, c) in sorted(modified_blocks):
+                full_clique_vals = state['codebook'].grid[state['Qidxs_blocks'][r, c].long()] # get coeffs for each clique from codebook
+                all_coeffs_block = torch.zeros(64, dtype=full_clique_vals.dtype, device=device)
+                for cl in range(8):
+                    all_coeffs_block[state['cliques'][cl]] = full_clique_vals[cl] # unshuffle from the clique order
+                hat_block = torch.sum(all_coeffs_block.view(64, 1, 1) * state['mats'], dim=0) / torch.sqrt(state['norm']) # convert coeffs back into 8x8 block
+                state['hatWr'][r * 8:(r + 1) * 8, c * 8:(c + 1) * 8] = hat_block # put patch in weight matrix of how block was edited
+
+            new_hatW = quip.incoherence_process(state['hatWr'], state['SU'].to(device), state['SV'].to(device), state.get('scaleWH'), args)
+            orig_m, orig_n = state['orig_shape']
+            with torch.no_grad():
+                module.weight.data.copy_(new_hatW[:orig_m, :orig_n].to(module.weight.dtype))
+
+    mixed_layer = mixed_layer.cpu()
+    return mixed_layer

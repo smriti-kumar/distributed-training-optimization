@@ -565,7 +565,7 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
     final_Qidxs = Qidxs_blocks.unsqueeze(1).expand(-1, 8, -1, -1).reshape(m, n)
     final_Qidxs = final_Qidxs[:orig_m, :orig_n // 8]
     
-    return hatWr, final_Qidxs
+    return hatWr, final_Qidxs, Qidxs_blocks
 
 def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     glog.info("at the top of quantize")
@@ -584,50 +584,50 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     assert (torch.all(torch.isfinite(W.cpu())))
 
     # incoherence preprocessing
-    # incoh_out = incoherence_preprocess(H, W, args)
-    # if incoh_out is None:
-    #     if args.use_fp64:
-    #         raise Exception
-    #     new_args = copy.deepcopy(args)
-    #     new_args.use_fp64 = True
-    #     glog.info('incoherence_preprocess failed, recomputing in fp64')
-    #     del H, W, codebook
-    #     utils.clean()
-    #     return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
-    # glog.info("done with incoherence processing")
+    incoh_out = incoherence_preprocess(H, W, args)
+    if incoh_out is None:
+        if args.use_fp64:
+            raise Exception
+        new_args = copy.deepcopy(args)
+        new_args.use_fp64 = True
+        glog.info('incoherence_preprocess failed, recomputing in fp64')
+        del H, W, codebook
+        utils.clean()
+        return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
+    glog.info("done with incoherence processing")
 
-    # Lhr, Hr, Wr, SU, SV, scaleWH = incoh_out
-    # del incoh_out
-    # utils.clean()
+    Lhr, Hr, Wr, SU, SV, scaleWH = incoh_out
+    del incoh_out
+    utils.clean()
 
-    SU = torch.ones(n, dtype=dtype_, device=device) # no incoherence processing
-    SV = torch.ones(m, dtype=dtype_, device=device)
+    # SU = torch.ones(n, dtype=dtype_, device=device) # no incoherence processing
+    # SV = torch.ones(m, dtype=dtype_, device=device)
 
-    scaleWH = None
-    Wr = W
-    Hr = H
+    # scaleWH = None
+    # Wr = W
+    # Hr = H
 
-    if args.rescale_WH:
-        Hr = H / H.abs().max()
-        diagH = torch.diag(Hr)
-        diagW2 = torch.diag(W.T @ W)
-        diagH = torch.clamp(diagH, min=1e-8)
-        diagW2 = torch.clamp(diagW2, min=1e-8)
-        scaleWH = (diagH / diagW2).sqrt().sqrt().to(torch.float32)
-        scaleWH = scaleWH.clamp(min=1e-8)
-        Wr = Wr * scaleWH[None, :]
-        Hr = Hr / scaleWH[None, :]
-        Hr = Hr / scaleWH[:, None]
-        scaleWH = scaleWH.cpu()
+    # if args.rescale_WH:
+    #     Hr = H / H.abs().max()
+    #     diagH = torch.diag(Hr)
+    #     diagW2 = torch.diag(W.T @ W)
+    #     diagH = torch.clamp(diagH, min=1e-8)
+    #     diagW2 = torch.clamp(diagW2, min=1e-8)
+    #     scaleWH = (diagH / diagW2).sqrt().sqrt().to(torch.float32)
+    #     scaleWH = scaleWH.clamp(min=1e-8)
+    #     Wr = Wr * scaleWH[None, :]
+    #     Hr = Hr / scaleWH[None, :]
+    #     Hr = Hr / scaleWH[:, None]
+    #     scaleWH = scaleWH.cpu()
 
-    SV = SV.cpu()
-    SU = SU.cpu()
+    # SV = SV.cpu()
+    # SU = SU.cpu()
 
-    Lhr = torch.linalg.cholesky(Hr)
-    if not torch.all(torch.isfinite(Lhr)):
-        return None
+    # Lhr = torch.linalg.cholesky(Hr)
+    # if not torch.all(torch.isfinite(Lhr)):
+    #     return None
     
-    Wr = Wr.to(device) # no incoherence processing
+    # Wr = Wr.to(device) # no incoherence processing
 
     glog.info(f'mean square of W: {W.square().mean()}')
     glog.info(f'mean square of Wr: {Wr.square().mean()}')
@@ -700,14 +700,14 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     else:
         Wscale /= codebook.opt_scale
     Wr = Wr / Wscale
-    Hr = Hr / (Wscale ** 2) # no incoherence processing
+    # Hr = Hr / (Wscale ** 2) # no incoherence processing
     glog.info("scaled Wr")
     codebook = codebook.to(device)
     glog.info("created codebook")
     
     glog.info("right before calling clique quantize from quantize")
     # hatWr, Qidxs = clique_quantize(Wr, codebook, device)
-    hatWr, Qidxs = clique_quantize_rounding(Wr, Hr, codebook, device)
+    hatWr, Qidxs, Qidxs_blocks = clique_quantize_rounding(Wr, Hr, codebook, device)
     glog.info("right after calling clique quantize from quantize")
     
     Wr = Wr.cpu()
@@ -725,10 +725,10 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
         A, B = None, None
 
     # reverse incoherence process
-    # hatW = incoherence_process(hatWr, SU, SV, scaleWH, args)
-    # glog.info("reverse incoherence processing done")
+    hatW = incoherence_process(hatWr, SU, SV, scaleWH, args)
+    glog.info("reverse incoherence processing done")
 
-    hatW = hatWr # no incoherence processing
+    # hatW = hatWr # no incoherence processing
 
     Qidxs = codebook.maybe_pack_idxs(Qidxs)
 
@@ -741,6 +741,8 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
         'SV': (SV * Wscale.to(SV.device)).to(
             torch.float16).to(orig_device),  # fuse Wscale into SV
         'scaleWH': scaleWH,
+        'hatWr': hatWr.to(orig_device),
+        'Qidxs_blocks': Qidxs_blocks.to(orig_device),
     }
 
     utils.clean()
