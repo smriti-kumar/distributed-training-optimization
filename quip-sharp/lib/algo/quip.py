@@ -600,12 +600,47 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     # del incoh_out
     # utils.clean()
 
-    Wr = W # no incoherence processing
-    Hr = H
-    SU = torch.ones(n, dtype=dtype_, device=device)
+    SU = torch.ones(n, dtype=dtype_, device=device) # no incoherence processing
     SV = torch.ones(m, dtype=dtype_, device=device)
+
     scaleWH = None
-    Lhr = torch.linalg.cholesky(Hr) # no incoherence processing
+    Wr = W
+    Hr = H
+    
+    if args.rescale_WH:
+        Hr = H / H.abs().max()
+        diagH = torch.diag(Hr)
+        diagW2 = torch.diag(W.T @ W)
+        diagH = torch.clamp(diagH, min=1e-8)
+        diagW2 = torch.clamp(diagW2, min=1e-8)
+        scaleWH = (diagH / diagW2).sqrt().sqrt().to(torch.float32)
+        scaleWH = scaleWH.clamp(min=1e-8)
+        Wr = Wr * scaleWH[None, :]
+        Hr = Hr / scaleWH[None, :]
+        Hr = Hr / scaleWH[:, None]
+        scaleWH = scaleWH.cpu()
+
+    if args.incoh_mode == "had":
+        SU = (torch.randn(n, device=device).sign() + 1e-5).sign().to(dtype_)
+        SV = (torch.randn(m, device=device).sign() + 1e-5).sign().to(dtype_)
+        Hr = RHT_H(Hr, SU)
+        Wr = RHT_W(Wr, SU, SV)
+    elif args.incoh_mode == "kron":
+        SU = utils.rand_ortho_butterfly_noblock(n).to(dtype_).to(device)
+        SV = utils.rand_ortho_butterfly_noblock(m).to(dtype_).to(device)
+        Hr = SU @ Hr @ SU.T
+        Wr = SV @ Wr @ SU.T
+    else:
+        raise NotImplementedError
+    
+    SV = SV.cpu()
+    SU = SU.cpu()
+
+    Lhr = torch.linalg.cholesky(Hr)
+    if not torch.all(torch.isfinite(Lhr)):
+        return None
+    
+    Wr = Wr.to(device) # no incoherence processing
 
     glog.info(f'mean square of W: {W.square().mean()}')
     glog.info(f'mean square of Wr: {Wr.square().mean()}')
