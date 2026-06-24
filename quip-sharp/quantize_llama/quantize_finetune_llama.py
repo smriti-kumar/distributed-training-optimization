@@ -191,7 +191,7 @@ def main(args):
             proc_list[cur_device + 1].join()
         utils.clean()
 
-        if args.ft_epochs > 0:
+        if args.ft_epochs > 0 or args.sparse_ft_epochs > 0:
             st = time.time()
             position_ids = position_ids.to(cur_device)
             attention_mask = attention_mask.to(cur_device)
