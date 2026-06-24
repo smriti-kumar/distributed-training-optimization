@@ -319,18 +319,18 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
         source = source.to(device).float()
         target = target.to(device).float()
         torch.cuda.synchronize()
-        print(f"Data loading: {time.time() - t0:.3f}s")
+        glog.info(f"Data loading: {time.time() - t0:.3f}s")
 
         t0 = time.time()
         output = mixed_layer(source.to(device), position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
         loss = torch.nn.MSELoss()(output, target)
         torch.cuda.synchronize()
-        print(f"Forward pass: {time.time() - t0:.3f}s")
+        glog.info(f"Forward pass: {time.time() - t0:.3f}s")
 
         t0 = time.time()
         loss.backward()
         torch.cuda.synchronize()
-        print(f"Backward pass: {time.time() - t0:.3f}s")
+        glog.info(f"Backward pass: {time.time() - t0:.3f}s")
 
         glog.info(f"epoch {epoch}, loss: {loss.item()}")
 
@@ -349,7 +349,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                 raise NotImplementedError
             
             torch.cuda.synchronize()
-            print(f"Gradient processing and incoherence transform: {time.time() - t0:.3f}s")
+            glog.info(f"Gradient processing and incoherence transform: {time.time() - t0:.3f}s")
 
             t0 = time.time()
             m = state['Qidxs_blocks'].shape[0] * 8
@@ -362,7 +362,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             grad_blocks = grad_Wr.reshape(gm // 8, 8, gn // 8, 8).permute(0, 2, 1, 3)
             grad_coeffs = torch.sum(grad_blocks.unsqueeze(2) * state['mats'].view(1, 1, *state['mats'].shape), dim=(-2, -1)) / torch.sqrt(state['norm'])
             torch.cuda.synchronize()
-            print(f"Gradient to coefficient processing: {time.time() - t0:.3f}s")
+            glog.info(f"Gradient to coefficient processing: {time.time() - t0:.3f}s")
 
             t0 = time.time()
             grad_clique_coeffs_list = []
@@ -378,12 +378,12 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             neighbors, neighbor_values = state['codebook'].get_neighbors(state['Qidxs_blocks']) # (m // 8, n // 8, 8, 8), (m // 8, n // 8, 8, 8, 8)
             curr_values = state['codebook'].grid[state['Qidxs_blocks'].long()] # (m // 8, n // 8, 8, 8)
             torch.cuda.synchronize()
-            print(f"Gradient clique coefficients, momentum, finding neighbors: {time.time() - t0:.3f}s")
+            glog.info(f"Gradient clique coefficients, momentum, finding neighbors: {time.time() - t0:.3f}s")
 
             t0 = time.time()
             scores = torch.einsum('rcok,rcobk->rcob', momentum, neighbor_values - curr_values.unsqueeze(3)) # vectorized form of taking inner product of momentum and flipping each bit
             torch.cuda.synchronize()
-            print(f"Score calculation: {time.time() - t0:.3f}s")
+            glog.info(f"Score calculation: {time.time() - t0:.3f}s")
 
             t0 = time.time()
             if args.sparse_ft_flip_range == "blocks":
@@ -409,7 +409,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             cols = cols.reshape(-1)
             rows = rows.reshape(-1)
             torch.cuda.synchronize()
-            print(f"Finding indices to flip: {time.time() - t0:.3f}s")
+            glog.info(f"Finding indices to flip: {time.time() - t0:.3f}s")
 
             t0 = time.time()
             seen_block_cliques = set() # don't want to make 2 changes within the same clique for a given block
@@ -425,7 +425,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
 
             state['Qidxs_blocks'][rows, cols, cliques] = neighbors[rows, cols, cliques, bits]
             torch.cuda.synchronize()
-            print(f"Removing duplicate blocks for flips and flipping: {time.time() - t0:.3f}s")
+            glog.info(f"Removing duplicate blocks for flips and flipping: {time.time() - t0:.3f}s")
 
             t0 = time.time()
             state['hatWr'] = state['hatWr'].to(module.weight.dtype)
@@ -438,7 +438,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                 hat_block = torch.sum(all_coeffs_block.view(64, 1, 1) * state['mats'], dim=0).to(module.weight.dtype) / torch.sqrt(state['norm']) # convert coeffs back into 8x8 block
                 state['hatWr'][r * 8:(r + 1) * 8, c * 8:(c + 1) * 8] = hat_block # put patch in weight matrix of how block was edited
             torch.cuda.synchronize()
-            print(f"Rebuilding and updating hatWr: {time.time() - t0:.3f}s")
+            glog.info(f"Rebuilding and updating hatWr: {time.time() - t0:.3f}s")
 
             t0 = time.time()
             new_hatW = quip.incoherence_process(state['hatWr'], state['SU'].to(device), state['SV'].to(device), state.get('scaleWH'), args)
@@ -447,7 +447,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             with torch.no_grad():
                 module.weight.data.copy_(new_hatW[:orig_m, :orig_n].to(module.weight.dtype))
             torch.cuda.synchronize()
-            print(f"Incoherence processing and reshaping at the end: {time.time() - t0:.3f}s")
+            glog.info(f"Incoherence processing and reshaping at the end: {time.time() - t0:.3f}s")
 
     mixed_layer = mixed_layer.cpu()
     return mixed_layer
