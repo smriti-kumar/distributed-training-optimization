@@ -301,6 +301,8 @@ def build_clique_state(saved_linear, device):
         'norm': norm,
         'momentum': None,
         'orig_shape': orig_shape,
+        'shapes': saved_linear['shapes'],
+        'scales': saved_linear['scales'], 
     }
 
 def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_dl, valid_dl, args):
@@ -403,6 +405,8 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                 remainder = remainder // 8
                 cols = remainder % (n // 8)
                 rows = remainder // (n // 8)
+            
+            glog.info(f"Score for chosen flips: {vals}")
 
             bits = bits.reshape(-1)
             cliques = cliques.reshape(-1)
@@ -446,8 +450,18 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             new_hatW = quip.incoherence_process(state['hatWr'], state['SU'].to(device), state['SV'].to(device), state.get('scaleWH'), args)
             new_hatW = new_hatW.to(module.weight.dtype)
             orig_m, orig_n = state['orig_shape']
+            sliced = new_hatW[:orig_m, :orig_n].to(module.weight.dtype)
+
+            curr = 0
+            pieces = []
+            for shape, scale in zip(state['shapes'], state['scales']):
+                pieces.append(sliced[curr:curr + shape[0]] * scale)
+                curr += shape[0]
+            scaled_weight = torch.cat(pieces, dim=0)
+
             with torch.no_grad():
-                module.weight.data.copy_(new_hatW[:orig_m, :orig_n].to(module.weight.dtype))
+                module.weight.data.copy_(scaled_weight.to(module.weight.dtype))
+
             torch.cuda.synchronize()
             glog.info(f"Incoherence processing and reshaping at the end: {time.time() - t0:.3f}s")
 
