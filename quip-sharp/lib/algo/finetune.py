@@ -396,7 +396,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                 cols = blocks % (n // 8)
             else: # flip across entire weight matrix
                 flat_scores = scores.reshape(-1)
-                vals, min_i = torch.topk(flat_scores, args.num_flips, largest=False) # want most negative scores, means change and momentum disagree so we should flip
+                vals, min_i = torch.topk(flat_scores, args.sparse_ft_num_flips, largest=False) # want most negative scores, means change and momentum disagree so we should flip
                 bits = min_i % 8
                 remainder = min_i // 8
                 cliques = remainder % 8
@@ -430,12 +430,14 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             t0 = time.time()
             state['hatWr'] = state['hatWr'].to(module.weight.dtype)
             modified_blocks = sorted(set(zip(rows.tolist(), cols.tolist())))
+            Wscale = state['SV'].abs().mean()
             for (r, c) in sorted(modified_blocks):
                 full_clique_vals = state['codebook'].grid[state['Qidxs_blocks'][r, c].long()].to(module.weight.dtype) # get coeffs for each clique from codebook
                 all_coeffs_block = torch.zeros(64, dtype=module.weight.dtype, device=device)
                 for cl in range(8):
                     all_coeffs_block[state['cliques'][cl]] = full_clique_vals[cl] # unshuffle from the clique order
                 hat_block = torch.sum(all_coeffs_block.view(64, 1, 1) * state['mats'], dim=0).to(module.weight.dtype) / torch.sqrt(state['norm']) # convert coeffs back into 8x8 block
+                hat_block = hat_block * Wscale
                 state['hatWr'][r * 8:(r + 1) * 8, c * 8:(c + 1) * 8] = hat_block # put patch in weight matrix of how block was edited
             torch.cuda.synchronize()
             glog.info(f"Rebuilding and updating hatWr: {time.time() - t0:.3f}s")
