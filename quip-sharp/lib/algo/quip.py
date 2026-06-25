@@ -584,50 +584,51 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     assert (torch.all(torch.isfinite(W.cpu())))
 
     # incoherence preprocessing
-    incoh_out = incoherence_preprocess(H, W, args)
-    if incoh_out is None:
-        if args.use_fp64:
-            raise Exception
-        new_args = copy.deepcopy(args)
-        new_args.use_fp64 = True
-        glog.info('incoherence_preprocess failed, recomputing in fp64')
-        del H, W, codebook
+    if args.incoh_mode != 'none':
+        incoh_out = incoherence_preprocess(H, W, args)
+        if incoh_out is None:
+            if args.use_fp64:
+                raise Exception
+            new_args = copy.deepcopy(args)
+            new_args.use_fp64 = True
+            glog.info('incoherence_preprocess failed, recomputing in fp64')
+            del H, W, codebook
+            utils.clean()
+            return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
+        glog.info("done with incoherence processing")
+
+        Lhr, Hr, Wr, SU, SV, scaleWH = incoh_out
+        del incoh_out
         utils.clean()
-        return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
-    glog.info("done with incoherence processing")
+    else:
+        SU = torch.ones(n, dtype=dtype_, device=device)
+        SV = torch.ones(m, dtype=dtype_, device=device)
 
-    Lhr, Hr, Wr, SU, SV, scaleWH = incoh_out
-    del incoh_out
-    utils.clean()
+        scaleWH = None
+        Wr = W
+        Hr = H
 
-    # SU = torch.ones(n, dtype=dtype_, device=device) # no incoherence processing
-    # SV = torch.ones(m, dtype=dtype_, device=device)
+        if args.rescale_WH:
+            Hr = H / H.abs().max()
+            diagH = torch.diag(Hr)
+            diagW2 = torch.diag(W.T @ W)
+            diagH = torch.clamp(diagH, min=1e-8)
+            diagW2 = torch.clamp(diagW2, min=1e-8)
+            scaleWH = (diagH / diagW2).sqrt().sqrt().to(torch.float32)
+            scaleWH = scaleWH.clamp(min=1e-8)
+            Wr = Wr * scaleWH[None, :]
+            Hr = Hr / scaleWH[None, :]
+            Hr = Hr / scaleWH[:, None]
+            scaleWH = scaleWH.cpu()
 
-    # scaleWH = None
-    # Wr = W
-    # Hr = H
+        SV = SV.cpu()
+        SU = SU.cpu()
 
-    # if args.rescale_WH:
-    #     Hr = H / H.abs().max()
-    #     diagH = torch.diag(Hr)
-    #     diagW2 = torch.diag(W.T @ W)
-    #     diagH = torch.clamp(diagH, min=1e-8)
-    #     diagW2 = torch.clamp(diagW2, min=1e-8)
-    #     scaleWH = (diagH / diagW2).sqrt().sqrt().to(torch.float32)
-    #     scaleWH = scaleWH.clamp(min=1e-8)
-    #     Wr = Wr * scaleWH[None, :]
-    #     Hr = Hr / scaleWH[None, :]
-    #     Hr = Hr / scaleWH[:, None]
-    #     scaleWH = scaleWH.cpu()
-
-    # SV = SV.cpu()
-    # SU = SU.cpu()
-
-    # Lhr = torch.linalg.cholesky(Hr)
-    # if not torch.all(torch.isfinite(Lhr)):
-    #     return None
-    
-    # Wr = Wr.to(device) # no incoherence processing
+        Lhr = torch.linalg.cholesky(Hr)
+        if not torch.all(torch.isfinite(Lhr)):
+            return None
+        
+        Wr = Wr.to(device)
 
     glog.info(f'mean square of W: {W.square().mean()}')
     glog.info(f'mean square of Wr: {Wr.square().mean()}')
@@ -700,7 +701,6 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     else:
         Wscale /= codebook.opt_scale
     Wr = Wr / Wscale
-    # Hr = Hr / (Wscale ** 2) # no incoherence processing
     glog.info("scaled Wr")
     codebook = codebook.to(device)
     glog.info("created codebook")
@@ -725,10 +725,11 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
         A, B = None, None
 
     # reverse incoherence process
-    hatW = incoherence_process(hatWr, SU, SV, scaleWH, args)
-    glog.info("reverse incoherence processing done")
-
-    # hatW = hatWr # no incoherence processing
+    if args.incoh_mode != 'none':
+        hatW = incoherence_process(hatWr, SU, SV, scaleWH, args)
+        glog.info("reverse incoherence processing done")
+    else:
+        hatW = hatWr
 
     Qidxs = codebook.maybe_pack_idxs(Qidxs)
 

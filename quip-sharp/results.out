@@ -67,3 +67,17 @@ avg_loss = 2.3768506394699216: 100%|██████████| 256/256 [02:
 I0622 17:36:14.729450 1928055 eval_ppl.py:63] c4 perplexity: 10.770927429199219
 
 It is a truth universally acknowledged that there is a great and perpetual lust for power, and power is but the effect of force, and force is but the effect of the concentration of power. sight, and that power is always in the offensive, the unconcentrated power is always defensive, is always the means of protection,
+
+Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques and with adaptive rounding, 5 epochs of finetuning with 50 global flips
+
+  0%|          | 0/83 [00:00<?, ?it/s]I0625 16:35:12.574496 637243 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.102736552077604: 100%|██████████| 83/83 [00:43<00:00,  1.91it/s] 
+I0625 16:35:51.243365 637243 eval_ppl.py:63] wikitext2 perplexity: 8.188547134399414
+  0%|          | 0/256 [00:00<?, ?it/s]I0625 16:37:29.877589 637243 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.3637831076048315: 100%|██████████| 256/256 [02:01<00:00,  2.10it/s]
+I0625 16:39:30.879630 637243 eval_ppl.py:63] c4 perplexity: 10.631093978881836
+
+It is a truth universally acknowledged that the most important part of a book is its title. It is a truth universally acknowledged that the most important part of a book is its title.
+The title of the book is the title of the book.
+The title of the book is the title of the book.
+The title of the book is
