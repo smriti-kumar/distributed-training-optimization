@@ -1,9 +1,11 @@
 import copy
 import os
+import math
 
 import glog
 import torch
 from tqdm import tqdm
+from itertools import product
 
 from lib import utils
 
@@ -566,6 +568,55 @@ def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
     final_Qidxs = final_Qidxs[:orig_m, :orig_n // 8]
     
     return hatWr, final_Qidxs, Qidxs_blocks
+
+def mats_tensor_product(n):
+    rep = int(torch.log2(torch.tensor(n // 8)))
+    A2 = hb_transform(torch.eye(4)) # (4, 2, 2)
+    B8 = hb_transform(torch.eye(64)) # (64, 8, 8)
+    mats = []
+    for i in product(range(4), repeat=rep):
+        for j in range(64):
+            cands = [A2[k] for k in i] + [B8[j]]
+            M = cands[0]
+            for mat in cands[1:]:
+                M = torch.kron(M, mat)
+            mats.append(M)
+    return torch.stack(mats) / mats[0].norm()
+
+def tp_clique_quantize(Wr, codebook, device='cpu'):
+    dtype = Wr.dtype
+    orig_m, orig_n = Wr.shape
+    n = 2 ** math.ceil(math.log2(max(orig_m, orig_n)))
+    Wr = torch.nn.functional.pad(Wr, (0, n - orig_n, 0, n - orig_m), mode='constant', value=0.0)
+    glog.info(f"m: {orig_m}")
+    glog.info(f"orig_m: {orig_m}")
+    glog.info(f"n: {n}")
+    glog.info(f"orig_n: {orig_n}")
+
+    cliques = [
+        [0, 2, 11, 25, 33, 39, 47, 57],
+        [1, 3, 10, 24, 32, 38, 46, 56],
+        [4, 6, 15, 29, 35, 37, 43, 61],
+        [5, 7, 14, 28, 34, 36, 42, 60],
+        [12, 18, 20, 26, 44, 53, 55, 62],
+        [13, 19, 21, 27, 45, 52, 54, 63],
+        [8, 16, 22, 30, 40, 49, 51, 58],
+        [9, 17, 23, 31, 41, 48, 50, 59]
+    ]
+
+    mats = mats_tensor_product(n).to(dtype=dtype, device=device)
+    coeffs = (mats * Wr).sum(dim=(-2, -1)).reshape((n * n) // 64, 64)
+    hat_coeffs = torch.zeros_like(coeffs)
+    qidxs_out = torch.zeros((coeffs.shape[0],), dtype=codebook.idx_dtype, device=device)
+    for i, clique in enumerate(cliques):
+        target = coeffs[:, clique]
+        hat_clique, qidxs_chunk = codebook.quantize(target)
+        hat_coeffs[:, clique] = hat_clique
+        qidxs_out[:, i] = qidxs_chunk.squeeze()
+    hat_coeffs = hat_coeffs.reshape(n * n)
+    hatWr = (mats * hat_coeffs.view(n * n, 1, 1)).sum(dim=0)
+
+    return hatWr[:orig_m, :orig_n], qidxs_out
 
 def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     glog.info("at the top of quantize")

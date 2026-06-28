@@ -48,14 +48,17 @@ The most important
 
 Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques and with adaptive rounding and no finetuning
 
-  0%|          | 0/83 [00:00<?, ?it/s]I0621 23:53:22.039921 2489186 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 2.0614464153726417: 100%|██████████| 83/83 [00:43<00:00,  1.92it/s]
-I0621 23:54:03.459848 2489186 eval_ppl.py:63] wikitext2 perplexity: 7.857326507568359
-  0%|          | 0/256 [00:00<?, ?it/s]I0621 23:55:13.124200 2489186 graph_wrapper.py:36] Built CUDA graph of model.
-avg_loss = 2.328509786631912: 100%|██████████| 256/256 [02:14<00:00,  1.90it/s] 
-I0621 23:57:26.941532 2489186 eval_ppl.py:63] c4 perplexity: 10.2626371383667
+  0%|          | 0/83 [00:00<?, ?it/s]I0626 01:44:44.683254 940388 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.059910412294319: 100%|██████████| 83/83 [00:41<00:00,  1.98it/s] 
+I0626 01:45:24.019330 940388 eval_ppl.py:63] wikitext2 perplexity: 7.845265865325928
+  0%|          | 0/256 [00:00<?, ?it/s]I0626 01:47:07.705776 940388 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.3276147544384003: 100%|██████████| 256/256 [02:04<00:00,  2.06it/s]
+I0626 01:49:11.450320 940388 eval_ppl.py:63] c4 perplexity: 10.253456115722656
 
-It is a truth universally acknowledged that the most important part of a book is its title. It is a truth universally acknowledged that the most important part of a book is its title. It is a truth universally acknowledged that the most important part of a book is its title. It is a truth universally acknowledged that the most important part
+It is a truth universally acknowledged that the most important part of a book is its title. It is a truth universally acknowledged that the most important part of a book is its title.
+The title of the book is the title of the book.
+The title of the book is the title of the book.
+The title of the book is
 
 Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques and with adaptive rounding (H sqrt) and no finetuning - attempt 2
 
@@ -68,7 +71,7 @@ I0622 17:36:14.729450 1928055 eval_ppl.py:63] c4 perplexity: 10.770927429199219
 
 It is a truth universally acknowledged that there is a great and perpetual lust for power, and power is but the effect of force, and force is but the effect of the concentration of power. sight, and that power is always in the offensive, the unconcentrated power is always defensive, is always the means of protection,
 
-Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques and with adaptive rounding, 5 epochs of finetuning with 50 global flips
+Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques and with adaptive rounding, 5 epochs of sparse finetuning with 50 global flips
 
   0%|          | 0/83 [00:00<?, ?it/s]I0625 16:35:12.574496 637243 graph_wrapper.py:36] Built CUDA graph of model.
 avg_loss = 2.102736552077604: 100%|██████████| 83/83 [00:43<00:00,  1.91it/s] 
@@ -81,3 +84,41 @@ It is a truth universally acknowledged that the most important part of a book is
 The title of the book is the title of the book.
 The title of the book is the title of the book.
 The title of the book is
+
+Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques and with adaptive rounding, 5 epochs of sparse finetuning with 25 global flips
+
+  0%|          | 0/83 [00:00<?, ?it/s]I0625 20:28:30.460775 806905 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.107194096209055: 100%|██████████| 83/83 [00:40<00:00,  2.06it/s] 
+I0625 20:29:09.531402 806905 eval_ppl.py:63] wikitext2 perplexity: 8.225131034851074
+  0%|          | 0/256 [00:00<?, ?it/s]I0625 20:30:39.774032 806905 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.373881706269458: 100%|██████████| 256/256 [02:03<00:00,  2.08it/s] 
+I0625 20:32:42.316787 806905 eval_ppl.py:63] c4 perplexity: 10.738998413085938
+
+It is a truth universally acknowledged that the most important part of a book is its title. It is also true that the title is the most difficult part of the book to compose.
+The title is the first thing that a reader sees. It is also the first thing that the author sees.
+When the title is written, the author is usually very
+
+Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques and with adaptive rounding, 5 epochs of sparse finetuning with 10 global flips
+
+  0%|          | 0/83 [00:00<?, ?it/s]I0626 11:24:09.834762 1161306 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.114028045930058: 100%|██████████| 83/83 [00:40<00:00,  2.05it/s] 
+I0626 11:24:48.890794 1161306 eval_ppl.py:63] wikitext2 perplexity: 8.281532287597656
+  0%|          | 0/256 [00:00<?, ?it/s]I0626 11:26:18.210748 1161306 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.3823964199982584: 100%|██████████| 256/256 [02:03<00:00,  2.07it/s]
+I0626 11:28:21.142696 1161306 eval_ppl.py:63] c4 perplexity: 10.830827713012695
+
+It is a truth universally acknowledged that the most important part of a book is its title. It is a truth universally acknowledged that the most important part of a book is its title.
+The title of the book is the title of the book.
+The title of the book is the title of the book.
+The title of the book is
+
+Quip# - Llama 2-7 2 bit - orthogonal basis quantization with cliques and with adaptive rounding, no incoherence processing and no finetuning
+
+  0%|          | 0/83 [00:00<?, ?it/s]I0625 20:32:38.963425 810487 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 12.730341543634253: 100%|██████████| 83/83 [00:38<00:00,  2.13it/s]
+I0625 20:33:16.647903 810487 eval_ppl.py:63] wikitext2 perplexity: 337844.8125
+  0%|          | 0/256 [00:00<?, ?it/s]I0625 20:34:45.727750 810487 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 12.331220058724284: 100%|██████████| 256/256 [01:59<00:00,  2.14it/s]
+I0625 20:36:44.460106 810487 eval_ppl.py:63] c4 perplexity: 226663.015625
+
+It is a truth universally acknowledged thatOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
