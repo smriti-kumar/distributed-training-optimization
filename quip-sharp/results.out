@@ -133,6 +133,11 @@ Llama layer index 1 sublayer o O(n^3) quantization test with incoh proc
 Error: 0.30236664147423453
 Proxy loss: 128.8922901659992
 
+Llama layer index 1 sublayer o orth quantization test with no adaptive rounding with incoh proc
+
+Error: 0.3023555416223472
+Proxy loss: 129.17189320460454
+
 Llama layer index 1 sublayer o quip# with had incoh proc
 
 Error: 0.4360564445656344

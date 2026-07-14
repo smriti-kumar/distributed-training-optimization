@@ -802,6 +802,128 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     glog.info("right before returning from quantize")
     return hatW.to(W_orig_dtype).to(orig_device), attr
 
+def original_quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
+    orig_device = H_orig.device
+    W_orig_dtype = W_orig.dtype
+    dtype_ = torch.float64 if args.use_fp64 else torch.float32
+    (m, n) = W_orig.shape
+
+    H = H_orig.clone().to(dtype_).to(device)
+    W = W_orig.clone().to(dtype_).to(device)
+    codebook = copy.deepcopy(codebook_orig).to(dtype_)
+
+    assert (m % 2 == 0)
+    assert (n % 4 == 0)
+    assert (torch.all(torch.isfinite(H.cpu())))
+    assert (torch.all(torch.isfinite(W.cpu())))
+
+    # incoherence preprocessing
+    incoh_out = incoherence_preprocess(H, W, args)
+    if incoh_out is None:
+        if args.use_fp64:
+            raise Exception
+        new_args = copy.deepcopy(args)
+        new_args.use_fp64 = True
+        glog.info('incoherence_preprocess failed, recomputing in fp64')
+        del H, W, codebook
+        utils.clean()
+        return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
+
+    Lhr, Hr, Wr, SU, SV, scaleWH = incoh_out
+    del incoh_out
+    utils.clean()
+
+    glog.info(f'mean square of W: {W.square().mean()}')
+    glog.info(f'mean square of Wr: {Wr.square().mean()}')
+    glog.info(f'difference between Hr and Hr.T: {((Hr - Hr.T).abs().max())}')
+    glog.info(f'max abs of Hr: {((Hr.abs().max()))}')
+    glog.info(f'min diag of Lhr: {Lhr.diag().min().item()}')
+
+    Wo = Wr.clone()
+
+    # remove low rank components before LDLQ
+    if args.lora_rank > 0:
+        Wr, Hr = low_rank_preprocess(Wr, Hr, Lhr, args)
+
+    # block LDL
+    block_LDL_out = utils.block_LDL(Hr, codebook.codesz)
+    if block_LDL_out is None:
+        if args.use_fp64:
+            raise Exception
+        new_args = copy.deepcopy(args)
+        new_args.use_fp64 = True
+        glog.info('block_LDL failed, recomputing in fp64')
+        del H, W, codebook, Lhr, Hr, Wr, SU, SV, scaleWH, Wo
+        utils.clean()
+        return quantize(H_orig, W_orig, rank, codebook_orig, new_args, device)
+
+    L, D = block_LDL_out
+    del block_LDL_out
+    del H_orig, W_orig, codebook_orig
+    utils.clean()
+
+    # LDLQ
+    Wscale = Wr.square().mean().sqrt()
+    if args.scale_override > 0:
+        Wscale /= args.scale_override
+    else:
+        Wscale /= codebook.opt_scale
+    Wr = Wr / Wscale
+    codebook = codebook.to(device)
+    if args.no_use_buffered:
+        hatWr, Qidxs = LDLQ(Wr, Hr, L, D, codebook, args)
+    elif args.lowmem_ldlq or args.use_fp64:
+        hatWr, Qidxs = LDLQ_buffered_lowmem(Wr,
+                                            Hr,
+                                            L,
+                                            D,
+                                            codebook,
+                                            args,
+                                            buf_cols=128)
+    else:
+        hatWr, Qidxs = LDLQ_buffered(Wr,
+                                     Hr,
+                                     L,
+                                     D,
+                                     codebook,
+                                     args,
+                                     buf_cols=128)
+
+    Wr = Wr.cpu()
+    Hr = Hr.cpu()
+    L = L.cpu()
+    D = D.cpu()
+    del Wr, Hr, L, D
+    utils.clean()
+
+    hatWr = hatWr * Wscale
+
+    # low rank correction
+    if args.lora_rank > 0:
+        hatWr, A, B = low_rank_process(Wo, hatWr, Lhr, args)
+        A = A.half().cpu()
+        B = B.half().cpu()
+    else:
+        A, B = None, None
+
+    # reverse incoherence process
+    hatW = incoherence_process(hatWr, SU, SV, scaleWH, args)
+
+    Qidxs = codebook.maybe_pack_idxs(Qidxs)
+
+    attr = {
+        'Qidxs': Qidxs.to(orig_device),
+        'A': A,
+        'B': B,
+        'SU': SU.to(torch.float16).to(orig_device),
+        'SV': (SV * Wscale.to(SV.device)).to(
+            torch.float16).to(orig_device),  # fuse Wscale into SV
+        'scaleWH': scaleWH,
+    }
+
+    utils.clean()
+
+    return hatW.to(W_orig_dtype).to(orig_device), attr
 
 def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
     glog.info("top of quantize linear")

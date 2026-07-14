@@ -6,7 +6,7 @@ from lib.algo.quip import original_quantize
 parser = argparse.ArgumentParser()
 parser.add_argument('--hf_path', type=str, required=True)
 parser.add_argument('--hessian_path', type=str, required=True)
-parser.add_argument('--layer_idx', type=int, default=1)
+parser.add_argument('--layer_i', type=int, default=1)
 parser.add_argument('--sublayer', type=str, default='o')
 args_cli = parser.parse_args()
 
@@ -28,7 +28,7 @@ args = types.SimpleNamespace(
 
 model = AutoModelForCausalLM.from_pretrained(args_cli.hf_path, torch_dtype=torch.float64, low_cpu_mem_usage=True)
 model.eval()
-layer = model.model.layers[args_cli.layer_idx]
+layer = model.model.layers[args_cli.layer_i]
 wmap = {
     'qkv': [layer.self_attn.q_proj.weight, layer.self_attn.k_proj.weight, layer.self_attn.v_proj.weight],
     'o': [layer.self_attn.o_proj.weight],
@@ -41,7 +41,7 @@ scales = [w.detach().to(dtype_).square().mean().sqrt() for w in weights]
 # W = torch.vstack([w.detach().to(dtype_) / s for w, s in zip(weights, scales)]).to(device)
 W = torch.cat([w.detach().double() for w in weights], dim=0).to(device)
 n = W.shape[0]
-hessian_file = f"{args_cli.hessian_path}/{args_cli.layer_idx}_{args_cli.sublayer}.pt"
+hessian_file = f"{args_cli.hessian_path}/{args_cli.layer_i}_{args_cli.sublayer}.pt"
 H_data = torch.load(hessian_file, map_location='cpu')
 H = utils.flat_to_sym(H_data['flatH'], H_data['n']).double()
 mu = H_data['mu'].double()

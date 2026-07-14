@@ -6,7 +6,7 @@ from lib.algo.quip import RHT_H, RHT_W
 parser = argparse.ArgumentParser()
 parser.add_argument('--hf_path', type=str, required=True)
 parser.add_argument('--hessian_path', type=str, required=True)
-parser.add_argument('--layer_idx', type=int, default=1)
+parser.add_argument('--layer_i', type=int, default=1)
 parser.add_argument('--sublayer', type=str, default='o', choices=['qkv','o','up','down'])
 args = parser.parse_args()
 
@@ -101,12 +101,14 @@ def fast_orth_quant(coeffs, H_sqrt, n, hat_coeffs, error):
             d, sign = 4, 0
             for i in range(4):
                 if torch.allclose(B_2[i] @ B_2[a], B_2[b]):
-                    d, sign = i, +1; break
+                    d, sign = i, +1
+                    break
                 if torch.allclose(B_2[i] @ B_2[a], -B_2[b]):
-                    d, sign = i, -1; break
+                    d, sign = i, -1
+                    break
             e_a = error[a * group_size:(a+1) * group_size]
             f = bt(ibt(e_a, next_n) @ H_decomp[d], next_n)
-            corrections += sign * f[clique_vals] / tr_H_sqrt * 2 / n**2
+            corrections += sign * f[clique_vals] / tr_H_sqrt / next_n**2
         coeffs_b = coeffs[b * group_size:(b+1) * group_size].clone()
         for c_ind in range(cliques_per_group):
             coeffs_b[clique_vals[c_ind]] += corrections[c_ind]
@@ -114,17 +116,10 @@ def fast_orth_quant(coeffs, H_sqrt, n, hat_coeffs, error):
         error_b = error[b * group_size : (b+1) * group_size]
         fast_orth_quant(coeffs_b, H_decomp[0], next_n, hat_b, error_b)
 
-def flat_to_sym(V, N):
-    A = torch.zeros(N, N, dtype=V.dtype, device=V.device)
-    idxs = torch.tril_indices(N, N, device=V.device)
-    A[idxs.unbind()] = V
-    A[idxs[1, :], idxs[0, :]] = V
-    return A
-
 model = AutoModelForCausalLM.from_pretrained(args.hf_path, torch_dtype=torch.float64, low_cpu_mem_usage=True)
 model.eval()
 
-layer = model.model.layers[args.layer_idx]
+layer = model.model.layers[args.layer_i]
 wmap = {'qkv': [layer.self_attn.q_proj.weight, layer.self_attn.k_proj.weight, layer.self_attn.v_proj.weight],
          'o': [layer.self_attn.o_proj.weight],
          'up': [layer.mlp.up_proj.weight, layer.mlp.gate_proj.weight],
@@ -132,8 +127,8 @@ wmap = {'qkv': [layer.self_attn.q_proj.weight, layer.self_attn.k_proj.weight, la
 W = torch.cat([w.detach().double() for w in wmap[args.sublayer]], dim=0).to(device)
 n = W.shape[0]
 k = calculate_k(n * n)
-H_data = torch.load(f"{args.hessian_path}/{args.layer_idx}_{args.sublayer}.pt", map_location=device)
-H = flat_to_sym(H_data['flatH'], H_data['n']).double()
+H_data = torch.load(f"{args.hessian_path}/{args.layer_i}_{args.sublayer}.pt", map_location=device)
+H = utils.flat_to_sym(H_data['flatH'], H_data['n']).double()
 mu = H_data['mu'].double().to(device) # based on quip#
 H = H + mu.unsqueeze(0) * mu.unsqueeze(1) # based on quip#
 H = utils.regularize_H(H, H_data['n'], 1e-2)
