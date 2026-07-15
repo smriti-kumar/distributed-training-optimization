@@ -57,7 +57,6 @@ parser.add_argument('--ft_early_stop', default=3, type=int)
 parser.add_argument('--ft_train_mode', action='store_true')
 parser.add_argument('--ft_grad_ckpt', action='store_true')
 parser.add_argument('--sparse_ft_epochs', default=0, type=int)
-parser.add_argument('--sparse_ft_flip_range', default="blocks", help="blocks or global", type=str)
 parser.add_argument('--sparse_ft_num_flips', default=1, type=int)
 parser.add_argument('--sparse_ft_momentum_rate', default=0.9, type=float)
 

@@ -13,10 +13,12 @@ args = parser.parse_args()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def hb_transform(x):
-    if len(x.shape) == 1: x = x.view(1, -1)
+    if len(x.shape) == 1:
+        x = x.view(1, -1)
     m, n = x.shape
     k = 1
-    while 4**k < n: k += 1
+    while 4**k < n:
+        k += 1
     assert 4**k == n
     b = torch.tensor([1,1,-1,-1], dtype=x.dtype, device=x.device)
     x = x.reshape((m,) + (4,)*k)
@@ -28,7 +30,8 @@ def hb_transform(x):
 
 def calculate_k(n):
     k = 1
-    while 4**k < n: k += 1
+    while 4**k < n:
+        k += 1
     assert 4**k == n
     return k
 
@@ -46,7 +49,8 @@ def hb_transform_reshape(x, k):
     x = x.reshape((m,) + (2,)*(2*k))
     fwd = [0]+[2*i+1 for i in range(k)]+[2*i+2 for i in range(k)]
     inv = [0]*(2*k+1)
-    for i,p in enumerate(fwd): inv[p] = i
+    for i,p in enumerate(fwd):
+        inv[p] = i
     x = x.permute(inv)
     return x.reshape((m,) + (4,)*k)
 

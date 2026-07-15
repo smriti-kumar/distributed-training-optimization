@@ -189,7 +189,8 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
             orig_m, orig_n = state['orig_shape']
             saved_linear['hatW'] = new_hatW[:orig_m, :orig_n].half().cpu()
             saved_linear['hatWr'] = state['hatWr'].cpu()
-            saved_linear['Qidxs_blocks'] = state['Qidxs_blocks'].cpu()
+            # saved_linear['Qidxs_blocks'] = state['Qidxs_blocks'].cpu()
+            saved_linear['Qidxs'] = state['Qidxs'].cpu()
             torch.save(saved_linear, save_path)
 
     # with torch.no_grad():
@@ -268,21 +269,6 @@ def finetune_susv_e2e(model, orig_logits, emb, position_ids, attention_mask,
         save_fn(model)
 
 def build_clique_state(saved_linear, device):
-    dtype = saved_linear['hatW'].dtype
-    mats = quip.hb_transform(torch.eye(64, dtype=dtype, device=device))
-    norm = (mats[0] * mats[0]).sum()
- 
-    cliques = [
-        [0, 2, 11, 25, 33, 39, 47, 57],
-        [1, 3, 10, 24, 32, 38, 46, 56],
-        [4, 6, 15, 29, 35, 37, 43, 61],
-        [5, 7, 14, 28, 34, 36, 42, 60],
-        [12, 18, 20, 26, 44, 53, 55, 62],
-        [13, 19, 21, 27, 45, 52, 54, 63],
-        [8, 16, 22, 30, 40, 49, 51, 58],
-        [9, 17, 23, 31, 41, 48, 50, 59]
-    ]
- 
     if saved_linear['fused']:
         out_dims = [s[0] for s in saved_linear['shapes']]
         in_dim = saved_linear['shapes'][0][1]
@@ -292,13 +278,10 @@ def build_clique_state(saved_linear, device):
  
     return {
         'hatWr': saved_linear['hatWr'].to(device).clone(),
-        'Qidxs_blocks': saved_linear['Qidxs_blocks'].to(device).clone(),
+        'Qidxs': saved_linear['Qidxs'].to(device).clone(),
         'SU': saved_linear['SU'],
         'SV': saved_linear['SV'],
         'scaleWH': saved_linear.get('scaleWH'),
-        'mats': mats,
-        'cliques': cliques,
-        'norm': norm,
         'momentum': None,
         'orig_shape': orig_shape,
         'shapes': saved_linear['shapes'],
@@ -354,114 +337,84 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             glog.info(f"Gradient processing and incoherence transform: {time.time() - t0:.3f}s")
 
             t0 = time.time()
-            m = state['Qidxs_blocks'].shape[0] * 8
-            n = state['Qidxs_blocks'].shape[1] * 8
-
-            if grad_Wr.shape[0] < m or grad_Wr.shape[1] < n:
-                grad_Wr = torch.nn.functional.pad(grad_Wr, (0, n - grad_Wr.shape[1], 0, m - grad_Wr.shape[0]), value=0.0)
-            
-            gm, gn = grad_Wr.shape[0], grad_Wr.shape[1]
-            grad_blocks = grad_Wr.reshape(gm // 8, 8, gn // 8, 8).permute(0, 2, 1, 3)
-            grad_coeffs = torch.sum(grad_blocks.unsqueeze(2) * state['mats'].view(1, 1, *state['mats'].shape), dim=(-2, -1)) / torch.sqrt(state['norm'])
+            m, n = state['Qidxs'].shape
+            if grad_Wr.shape[0] < m or grad_Wr.shape[1] < n: # reshaping grad to match Qidxs shape of (m, n//8, 8)
+                grad_Wr = torch.nn.functional.pad(grad_Wr, (0, n * 8 - grad_Wr.shape[1], 0, m - grad_Wr.shape[0]), value=0.0)
+            grad_coeffs = grad_Wr[:m, :n * 8].reshape(m, n, 8)
             torch.cuda.synchronize()
-            glog.info(f"Gradient to coefficient processing: {time.time() - t0:.3f}s")
+            glog.info(f"Gradient reshaping and to coefficient processing: {time.time() - t0:.3f}s")
 
             t0 = time.time()
-            grad_clique_coeffs_list = []
-            for c in range(8):
-                grad_clique_coeffs_list.append(grad_coeffs[:, :, state['cliques'][c]])
-            grad_clique_coeffs = torch.stack(grad_clique_coeffs_list, dim=2)
-
             if state['momentum'] is None:
-                state['momentum'] = torch.zeros_like(grad_clique_coeffs)
-            state['momentum'] = momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_clique_coeffs
-            momentum = state['momentum']
+                state['momentum'] = torch.zeros_like(grad_coeffs)
+            state['momentum'] = momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_coeffs
 
-            neighbors, neighbor_values = state['codebook'].get_neighbors(state['Qidxs_blocks']) # (m // 8, n // 8, 8, 8), (m // 8, n // 8, 8, 8, 8)
-            curr_values = state['codebook'].grid[state['Qidxs_blocks'].long()] # (m // 8, n // 8, 8, 8)
+            neighbors, neighbor_values = state['codebook'].get_neighbors(state['Qidxs']) # (m, n//8, 8), (m, n//8, 8, 8)
+            curr_values = state['codebook'].grid[state['Qidxs_blocks'].long()] # (m, n//8, 8)
             torch.cuda.synchronize()
-            glog.info(f"Gradient clique coefficients, momentum, finding neighbors: {time.time() - t0:.3f}s")
+            glog.info(f"Momentum and finding neighbors: {time.time() - t0:.3f}s")
 
             t0 = time.time()
-            scores = torch.einsum('rcok,rcobk->rcob', momentum, neighbor_values - curr_values.unsqueeze(3)) # vectorized form of taking inner product of momentum and flipping each bit
+            scores = torch.einsum('mni,mnbi->mnb', state['momentum'], neighbor_values - curr_values.unsqueeze(2)) # vectorized form of taking inner product of momentum and flipping each bit
             torch.cuda.synchronize()
             glog.info(f"Score calculation: {time.time() - t0:.3f}s")
 
             t0 = time.time()
-            if args.sparse_ft_flip_range == "blocks":
-                flat_scores = scores.reshape(m * n // 64, 64)
-                vals, min_i = torch.topk(flat_scores, args.sparse_ft_num_flips, dim=1, largest=False)
-                cliques = min_i // 8
-                bits = min_i % 8
-                blocks = torch.arange(m * n // 64, device=device).unsqueeze(1).expand(-1, args.sparse_ft_num_flips)
-                rows = blocks // (n // 8)
-                cols = blocks % (n // 8)
-            else: # flip across entire weight matrix
-                flat_scores = scores.reshape(-1)
-                vals, min_i = torch.topk(flat_scores, args.sparse_ft_num_flips, largest=False) # want most negative scores, means change and momentum disagree so we should flip
-                bits = min_i % 8
-                remainder = min_i // 8
-                cliques = remainder % 8
-                remainder = remainder // 8
-                cols = remainder % (n // 8)
-                rows = remainder // (n // 8)
-            
+            flat_scores = scores.reshape(-1)
+            vals, min_i = torch.topk(flat_scores, args.sparse_ft_num_flips, largest=False) # want most negative scores, means change and momentum disagree so we should flip
+            bits = min_i % 8
+            remainder = min_i // 8
+            cols = remainder % (n // 8)
+            rows = remainder // (n // 8)
             glog.info(f"Score for chosen flips: {vals}")
-
-            bits = bits.reshape(-1)
-            cliques = cliques.reshape(-1)
-            cols = cols.reshape(-1)
-            rows = rows.reshape(-1)
-            torch.cuda.synchronize()
             glog.info(f"Finding indices to flip: {time.time() - t0:.3f}s")
 
             t0 = time.time()
-            seen_block_cliques = set() # don't want to make 2 changes within the same clique for a given block
-            flip = torch.zeros(rows.shape[0], dtype=torch.bool)
+            seen_inds = set() # don't want to make 2 changes within the same clique for a given block
+            flip = torch.zeros(rows.shape[0], dtype=torch.bool, device=device)
             for i in range(rows.shape[0]):
-                if (rows[i].item(), cols[i].item(), cliques[i].item()) not in seen_block_cliques:
-                    seen_block_cliques.add((rows[i].item(), cols[i].item(), cliques[i].item()))
+                if (rows[i].item(), cols[i].item()) not in seen_inds:
+                    seen_inds.add((rows[i].item(), cols[i].item()))
                     flip[i] = True
             rows = rows[flip]
             cols = cols[flip]
-            cliques = cliques[flip]
             bits = bits[flip]
 
-            state['Qidxs_blocks'][rows, cols, cliques] = neighbors[rows, cols, cliques, bits]
+            state['Qidxs'][rows, cols] = neighbors[rows, cols, bits]
             torch.cuda.synchronize()
-            glog.info(f"Removing duplicate blocks for flips and flipping: {time.time() - t0:.3f}s")
+            glog.info(f"Removing duplicate indices for flips and flipping: {time.time() - t0:.3f}s")
 
             t0 = time.time()
-            state['hatWr'] = state['hatWr'].to(module.weight.dtype)
-            modified_blocks = sorted(set(zip(rows.tolist(), cols.tolist())))
+            # state['hatWr'] = state['hatWr'].to(module.weight.dtype)
+            # modified_blocks = sorted(set(zip(rows.tolist(), cols.tolist())))
+            # Wscale = state['SV'].abs().mean()
+            # for (r, c) in sorted(modified_blocks):
+            #     full_clique_vals = state['codebook'].grid[state['Qidxs_blocks'][r, c].long()].to(module.weight.dtype) # get coeffs for each clique from codebook
+            #     all_coeffs_block = torch.zeros(64, dtype=module.weight.dtype, device=device)
+            #     for cl in range(8):
+            #         all_coeffs_block[state['cliques'][cl]] = full_clique_vals[cl] # unshuffle from the clique order
+            #     hat_block = torch.sum(all_coeffs_block.view(64, 1, 1) * state['mats'], dim=0).to(module.weight.dtype) / torch.sqrt(state['norm']) # convert coeffs back into 8x8 block
+            #     hat_block = hat_block * Wscale
+            #     state['hatWr'][r * 8:(r + 1) * 8, c * 8:(c + 1) * 8] = hat_block # put patch in weight matrix of how block was edited
             Wscale = state['SV'].abs().mean()
-            for (r, c) in sorted(modified_blocks):
-                full_clique_vals = state['codebook'].grid[state['Qidxs_blocks'][r, c].long()].to(module.weight.dtype) # get coeffs for each clique from codebook
-                all_coeffs_block = torch.zeros(64, dtype=module.weight.dtype, device=device)
-                for cl in range(8):
-                    all_coeffs_block[state['cliques'][cl]] = full_clique_vals[cl] # unshuffle from the clique order
-                hat_block = torch.sum(all_coeffs_block.view(64, 1, 1) * state['mats'], dim=0).to(module.weight.dtype) / torch.sqrt(state['norm']) # convert coeffs back into 8x8 block
-                hat_block = hat_block * Wscale
-                state['hatWr'][r * 8:(r + 1) * 8, c * 8:(c + 1) * 8] = hat_block # put patch in weight matrix of how block was edited
+            new_coeffs = state['codebook'].grid[state['Qidxs'].long()]
+            orig_m, orig_n = state['orig_shape']
+            for r in sorted(set(rows.tolist())):
+                state['hatWr'][r, :n * 8] = new_coeffs[r].reshape(-1) * Wscale
+            state['hatWr'] = state['hatWr'][:orig_m, :orig_n]
             torch.cuda.synchronize()
             glog.info(f"Rebuilding and updating hatWr: {time.time() - t0:.3f}s")
 
             t0 = time.time()
             new_hatW = quip.incoherence_process(state['hatWr'], state['SU'].to(device), state['SV'].to(device), state.get('scaleWH'), args)
             new_hatW = new_hatW.to(module.weight.dtype)
-            orig_m, orig_n = state['orig_shape']
-            sliced = new_hatW[:orig_m, :orig_n].to(module.weight.dtype)
-
             curr = 0
             pieces = []
             for shape, scale in zip(state['shapes'], state['scales']):
-                pieces.append(sliced[curr:curr + shape[0]] * scale)
+                pieces.append(new_hatW[curr:curr + shape[0]] * scale)
                 curr += shape[0]
-            scaled_weight = torch.cat(pieces, dim=0)
-
             with torch.no_grad():
-                module.weight.data.copy_(scaled_weight.to(module.weight.dtype))
-
+                module.weight.data.copy_(torch.cat(pieces).to(module.weight.dtype))
             torch.cuda.synchronize()
             glog.info(f"Incoherence processing and reshaping at the end: {time.time() - t0:.3f}s")
 
