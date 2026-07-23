@@ -38,9 +38,9 @@ wmap = {
 weights = wmap[args_cli.sublayer]
 dtype_ = torch.float64
 scales = [w.detach().to(dtype_).square().mean().sqrt() for w in weights]
-# W = torch.vstack([w.detach().to(dtype_) / s for w, s in zip(weights, scales)]).to(device)
-W = torch.cat([w.detach().double() for w in weights], dim=0).to(device)
-n = W.shape[0]
+
+Ws = [w.detach().double() for w in weights]
+n = Ws[0].shape[1]
 hessian_file = f"{args_cli.hessian_path}/{args_cli.layer_i}_{args_cli.sublayer}.pt"
 H_data = torch.load(hessian_file, map_location='cpu')
 H = utils.flat_to_sym(H_data['flatH'], H_data['n']).double()
@@ -49,8 +49,13 @@ H.add_(mu[None, :] * mu[:, None])
 H = utils.regularize_H(H, H_data['n'], args.sigma_reg)
 H = H.to(device)
 cb = codebook_lib.get_codebook('E8P12').to(dtype_)
-hatW, _ = original_quantize(H, W, rank=0, codebook_orig=cb, args=args, device=device)
-err = (W - hatW).norm() / W.norm()
-proxy_loss = ((hatW - W) @ H @ (hatW - W).T).trace()
-print(f"Error: {err.item()}")
-print(f"Proxy loss: {proxy_loss.item()}")
+
+for passes in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
+    print(f"Number of passes: {passes}")
+    args.quip_tune_iters = passes
+    for W in Ws:
+        W = W.to(device)
+        hatW, _ = original_quantize(H, W, rank=0, codebook_orig=cb, args=args, device=device)
+        E = hatW - W
+        print(f"Error: {E.square().sum() / W.square().sum()}")
+        print(f"Proxy loss: {(E @ H @ E.T).trace()}")

@@ -355,345 +355,199 @@ def LDLQ_buffered_lowmem(Wr, Hr, L, D, cb, args, buf_cols=128):
 
     return hatWr, Qidxs
 
-def hb_transform(x):
-    if len(x.shape) == 1:
-        x = x.view(1,-1)
-    (m,n) = x.shape
+def get_cliques(device):
+    cliques = [
+        [0, 2, 11, 25, 33, 39, 47, 57],
+        [1, 3, 10, 24, 32, 38, 46, 56],
+        [4, 6, 15, 29, 35, 37, 43, 61],
+        [5, 7, 14, 28, 34, 36, 42, 60],
+        [12, 18, 20, 26, 44, 53, 55, 62],
+        [13, 19, 21, 27, 45, 52, 54, 63],
+        [8, 16, 22, 30, 40, 49, 51, 58],
+        [9, 17, 23, 31, 41, 48, 50, 59]
+    ]
+    cperm = torch.tensor(cliques).view(-1).to(device)
+    ciperm = cperm.sort().indices.to(device)
+    return cperm, ciperm
+
+def hbc_transform(x):
+    _, ciperm = get_cliques(x.device)
+    mm = x.shape[:-1]
+    x = x.view(-1, x.shape[-1])
+    m, n = x.shape
     k = 1
-    while 4**k < n:
-        k += 1
-    assert(4**k == n)
+    while 4**k < n: k += 1
+    assert 4**k == n
     b = torch.tensor([1,1,-1,-1], dtype=x.dtype, device=x.device)
+    x = x.reshape(-1,64)[:,ciperm]
     x = x.reshape((m,) + (4,)*k)
     for i in range(k):
-        x = x.flip(1+i) + x * b.view((1,)*(i+1) + (4,) + (1,)*(k-1-i))
+        x = x.flip(1+i) + x * b.view((1,)*(i+1)+(4,)+(1,)*(k-1-i))
     x = x.reshape((m,) + (2,2)*k)
-    x = x.permute((0,) + tuple(2*i+1 for i in range(k)) + tuple(2*i+2 for i in range(k)))
-    return x.reshape(m, 2**k, 2**k) / (2**k)
+    x = x.permute((0,)+tuple(2*i+1 for i in range(k))+tuple(2*i+2 for i in range(k)))
+    return x.reshape(mm + (2**k, 2**k)) / (2**(k/2))
 
-def clique_quantize(Wr, codebook, device='cpu', buffer=4096):
-    dtype = Wr.dtype
-    m, n = Wr.shape
-    orig_m = m
-    orig_n = n
-    if m % 8 != 0:
-        m = m + 8 - (m % 8)
-    if n % 8 != 0:
-        n = n + 8 - (n % 8)
-    Wr = torch.nn.functional.pad(Wr, (0, n - orig_n, 0, m - orig_m), mode='constant', value=0.0)
-    glog.info(f"m: {m}")
-    glog.info(f"orig_m: {orig_m}")
-    glog.info(f"n: {n}")
-    glog.info(f"orig_n: {orig_n}")
-
-    mats = hb_transform(torch.eye(64, dtype=dtype, device=device))
-    norm = (mats[0] * mats[0]).sum()
-
-    cliques = [
-        [0, 2, 11, 25, 33, 39, 47, 57],
-        [1, 3, 10, 24, 32, 38, 46, 56],
-        [4, 6, 15, 29, 35, 37, 43, 61],
-        [5, 7, 14, 28, 34, 36, 42, 60],
-        [12, 18, 20, 26, 44, 53, 55, 62],
-        [13, 19, 21, 27, 45, 52, 54, 63],
-        [8, 16, 22, 30, 40, 49, 51, 58],
-        [9, 17, 23, 31, 41, 48, 50, 59]
-    ]
-
-    blocks = Wr.reshape(m // 8, 8, n // 8, 8).permute(0, 2, 1, 3) # (m//8, n//8, 8, 8)
-    blocks_flat = blocks.reshape(-1, 8, 8) # (num_blocks, 8, 8)
-    coeffs = torch.sum(blocks_flat.unsqueeze(1) * mats.unsqueeze(0), dim=(-2, -1)) / torch.sqrt(norm)  # frobenius inner product for coeffs
-
-    glog.info(f"Wr (input to clique_quantize) mean square: {(Wr**2).mean().item()}")
-    glog.info(f"coeffs mean square: {(coeffs**2).mean().item()}")
-
-    coeffs_shuffled = torch.zeros((coeffs.shape[0], 64), dtype=coeffs.dtype, device=device)
-    for i, c in enumerate(cliques):
-        for j, mat in enumerate(c):
-            coeffs_shuffled[:, (i * 8) + j] = coeffs[:, mat]
-
-    coeffs_shuffled_flat = coeffs_shuffled.reshape(-1, 8)
-    hat_e8_out = torch.zeros_like(coeffs_shuffled_flat)
-    qidxs_out = torch.zeros((coeffs_shuffled_flat.shape[0],), dtype=codebook.idx_dtype, device=device)
-
-    glog.info("before codebook quantizing in clique quantize")
-    
-    for i in range(0, coeffs_shuffled_flat.shape[0], buffer):
-        end = min(i + buffer, coeffs_shuffled_flat.shape[0])
-        curr_chunk = coeffs_shuffled_flat[i:end]
-        hat_chunk, qidxs_chunk = codebook.quantize(curr_chunk)        
-        hat_e8_out[i:end] = hat_chunk
-        qidxs_out[i:end] = qidxs_chunk.squeeze()
-        del curr_chunk, hat_chunk, qidxs_chunk
-        torch.cuda.empty_cache()
-
-    glog.info("after codebook quantizing in clique quantize")
-
-    hat_coeffs = hat_e8_out.reshape(-1, 64)
-    hat_coeffs_unshuffled = torch.zeros_like(hat_coeffs)
-    for i, c in enumerate(cliques):
-        for j, mat in enumerate(c):
-            hat_coeffs_unshuffled[:, mat] = hat_coeffs[:, (i * 8) + j]
-
-    hat_blocks_flat = torch.sum(hat_coeffs_unshuffled.unsqueeze(-1).unsqueeze(-1) * mats.unsqueeze(0), dim=1) / torch.sqrt(norm)
-    hat_blocks = hat_blocks_flat.view(m // 8, n // 8, 8, 8)
-    hatWr = hat_blocks.permute(0, 2, 1, 3).reshape(m, n)
-    hatWr = hatWr[:orig_m, :orig_n]
-
-    glog.info(f"difference between wr and hatwr: {(Wr - hatWr).abs().max() / Wr.abs().max()}")
-
-    clique_idxs = qidxs_out.view(coeffs_shuffled.shape[0], 8)
-    spatial_idxs = clique_idxs.reshape(m // 8, n // 8, 8)
-    spatial_idxs = spatial_idxs.permute(0, 2, 1).reshape(m, n // 8)
-    final_Qidxs = spatial_idxs[:orig_m, :orig_n // 8]
-    
-    return hatWr, final_Qidxs
-
-def clique_quantize_rounding(Wr, Hr, codebook, device='cpu'):
-    dtype = Wr.dtype
-    m, n = Wr.shape
-    orig_m = m
-    orig_n = n
-    if m % 8 != 0:
-        m = m + 8 - (m % 8)
-    if n % 8 != 0:
-        n = n + 8 - (n % 8)
-    Wr = torch.nn.functional.pad(Wr, (0, n - orig_n, 0, m - orig_m), mode='constant', value=0.0)
-    glog.info(f"m: {m}")
-    glog.info(f"orig_m: {orig_m}")
-    glog.info(f"n: {n}")
-    glog.info(f"orig_n: {orig_n}")
-
-    if Hr.shape[0] < n: # not mn bc rows are independent so those would be 0 anyways
-        pad_size = n - Hr.shape[0]
-        Hr = torch.nn.functional.pad(Hr, (0, pad_size, 0, pad_size), mode='constant', value=0.0)
-        for i in range(orig_n, n):
-            Hr[i, i] = 1
-    
-    L = torch.linalg.cholesky(Hr)
-
-    hatWr = torch.zeros(m, n, dtype=dtype, device=device)
-    Qidxs_blocks = torch.zeros(m // 8, n // 8, 8, dtype=codebook.idx_dtype, device=device)
-
-    mats = hb_transform(torch.eye(64, dtype=dtype, device=device))
-    norm = (mats[0] * mats[0]).sum()
-
-    cliques = [
-        [0, 2, 11, 25, 33, 39, 47, 57],
-        [1, 3, 10, 24, 32, 38, 46, 56],
-        [4, 6, 15, 29, 35, 37, 43, 61],
-        [5, 7, 14, 28, 34, 36, 42, 60],
-        [12, 18, 20, 26, 44, 53, 55, 62],
-        [13, 19, 21, 27, 45, 52, 54, 63],
-        [8, 16, 22, 30, 40, 49, 51, 58],
-        [9, 17, 23, 31, 41, 48, 50, 59]
-    ]
-
-    glog.info("before quantization col loop in clique quantize rounding")
-
-    for col in reversed(range(n // 8)): # since ldlq does it in reverse
-        cstart = col * 8
-        cend = cstart + 8
-        Hr_block = Hr[cstart:cend, cstart:cend]
-        # S, V = torch.linalg.eigh(Hr_block)
-        # S_sqrt = torch.sqrt(torch.clamp(S, min=0)) # dont want to take sqrt of negative eigenvalues just in case
-        # Hr_sqrt = V @ torch.diag(S_sqrt) @ V.T
-        # tr_H_sqrt = torch.diagonal(Hr_sqrt).sum()
-
-        # glog.info("before quantization row loop in clique quantize rounding")
-
-        corrections = torch.zeros(m, 8, dtype=dtype, device=device)
-        if cend < n: # stuff was quantized to the right and need to find offset
-            corrections = (Wr[:, cend:] - hatWr[:, cend:]) @ L[cend:, cstart:cend]
-
-        targets = Wr[:, cstart:cend] + corrections
-        coeffs = torch.sum(targets.view(m // 8, 8, 8).unsqueeze(1) * mats.unsqueeze(0), dim=(-2, -1)) / torch.sqrt(norm)
-
-        hat_coeffs = torch.zeros(m // 8, 64, dtype=dtype, device=device)
-
-        for clique in range(8):
-            curr_coeffs = coeffs[:, cliques[clique]]
-            if clique != 0: # don't adaptive round for first clique, need to correct for other cliques after first
-                clique_corrections = torch.zeros(m // 8, 8, dtype=dtype, device=device)
-                for i in range(clique):
-                    prev_errs = coeffs[:, cliques[i]] - hat_coeffs[:, cliques[i]]
-                    # correction_trace = torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_sqrt, mats[cliques[i]]) / tr_H_sqrt
-                    # clique_corrections += prev_errs @ correction_trace.T
-                    clique_corrections += prev_errs @ torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_block, mats[cliques[i]]).T
-                curr_coeffs += clique_corrections
-            
-            hat_clique, qidx = codebook.quantize(curr_coeffs)
-            hat_coeffs[:, cliques[clique]] = hat_clique
-            Qidxs_blocks[:, col, clique] = qidx.view(m // 8)
-        
-        hatWr[:, cstart:cend] = torch.sum(hat_coeffs.view(m // 8, 64, 1, 1) * mats.unsqueeze(0), dim=1).reshape(m, 8) / torch.sqrt(norm)
-
-        # for row in range(m // 8):
-        #     rstart = row * 8
-        #     rend = rstart + 8
-        #     Wr_block = Wr[rstart:rend, cstart:cend]
-
-        #     correction = torch.zeros(8, 8, dtype=dtype, device=device)
-        #     if cend < n: # stuff was quantized to the right and need to find offset
-        #         correction = (Wr[rstart:rend, cend:] - hatWr[rstart:rend, cend:]) @ L[cend:, cstart:cend] # inspired by LDLQ
-            
-        #     target = Wr_block + correction
-        #     coeffs = torch.sum(target.unsqueeze(0) * mats, dim=(-2, -1)) / torch.sqrt(norm)
-
-        #     hat_coeffs = torch.zeros(64, dtype=dtype, device=device)
-
-        #     # glog.info("before quantization clique loop in clique quantize rounding")
-
-        #     for clique in range(8):
-        #         curr_coeffs = coeffs[cliques[clique]]
-        #         if clique != 0: # don't adaptive round for first clique, need to correct for other cliques after first
-        #             clique_correction = torch.zeros(8, dtype=dtype, device=device)
-        #             for i in range(clique):
-        #                 prev_err = coeffs[cliques[i]] - hat_coeffs[cliques[i]]
-        #                 clique_correction += torch.einsum('iab,bc,jac->ij', mats[cliques[clique]], Hr_block, mats[cliques[i]]) @ prev_err # using mats for both cliques for the Hessian based rounding
-        #             curr_coeffs += clique_correction
-                
-        #         hat_clique, qidx = codebook.quantize(curr_coeffs.unsqueeze(0))
-        #         hat_coeffs[cliques[clique]] = hat_clique.squeeze(0)
-        #         Qidxs_blocks[row, col, clique] = qidx.squeeze()
-            
-        #     hatWr[rstart:rend, cstart:cend] = torch.sum(hat_coeffs.view(64, 1, 1) * mats, dim=0) / torch.sqrt(norm)
-    
-    glog.info("done with all loops in clique quantize rounding")
-
-    glog.info(f"difference between wr and hatwr: {(Wr - hatWr).abs().max() / Wr.abs().max()}")
-
-    hatWr = hatWr[:orig_m, :orig_n]
-    final_Qidxs = Qidxs_blocks.unsqueeze(1).expand(-1, 8, -1, -1).reshape(m, n)
-    final_Qidxs = final_Qidxs[:orig_m, :orig_n // 8]
-    
-    return hatWr, final_Qidxs, Qidxs_blocks
-
-def calculate_k(n):
+def ihbc_transform(x):
+    cperm, _ = get_cliques(x.device)
+    mm = x.shape[:-2]
+    x = x.view(-1, x.shape[-2], x.shape[-1])
+    m, n, n_ = x.shape
+    assert(n == n_)
     k = 1
-    while 4**k < n:
-        k += 1
-    assert(4**k == n)
-    return k
-
-def hb_transform_loop(x, k):
-    m, n = x.shape
-    assert 4**k == n
+    while 2**k < n: k += 1
+    assert 2**k == n
+    x = x.reshape((m,) + (2,2)*k)
+    x = x.permute((0,)+tuple((i>>1)+1+(i&1)*k for i in range(2*k)))
     b = torch.tensor([1,1,-1,-1], dtype=x.dtype, device=x.device)
     x = x.reshape((m,) + (4,)*k)
     for i in range(k):
         x = x.flip(1+i) + x * b.view((1,)*(i+1)+(4,)+(1,)*(k-1-i))
-    return x.reshape((m,) + (2,2)*k)
+    x = x.reshape(-1,64)[:,cperm]
+    return x.reshape(mm + (4**k,)) / (2**(k/2))
 
-def hb_transform_reshape(x, k):
-    m = x.shape[0]
-    x = x.reshape((m,) + (2,)*(2*k))
-    fwd = [0]+[2*i+1 for i in range(k)]+[2*i+2 for i in range(k)]
-    inv = [0]*(2*k+1)
-    for i,p in enumerate(fwd): inv[p] = i
-    x = x.permute(inv)
-    return x.reshape((m,) + (4,)*k)
+def H_multiply(X,H):
+    X = hbc_transform(X)
+    X = X @ H
+    X = ihbc_transform(X)
+    return X
 
-def bt(M, n):
-    k = calculate_k(n*n)
-    flat = hb_transform_reshape(M.reshape(1,n,n), k).reshape(1, n*n)
-    return (hb_transform_loop(flat, k) / (2**k)).reshape(n*n) * n
+def HL_multiply(X,H):
+    Xshape = X.shape
+    n = X.shape[-1]
+    Z = X.clone()
+    Z = Z.reshape(-1,n)
+    Y = torch.zeros_like(Z)
+    for i in range(n):
+        Y[:,i] = H_multiply(Z,H)[:,i]
+        Z[:,i].zero_()
+    return Y.reshape(Xshape)
 
-def ibt(e, n):
-    return hb_transform(e.reshape(1, n*n)).reshape(n, n)
+def decompose_H(H):
+    (n, n_) = H.shape
+    assert(n_ == n)
+    decomp = []
+    while n > 8:
+        next_n = n // 2
+        Ha, Hb = H[:next_n, :next_n], H[:next_n, next_n:]
+        Hc, Hd = H[next_n:, :next_n], H[next_n:, next_n:]
+        H_decomp = [(Ha+Hd)/2, (Hb+Hc)/2, (Hb-Hc)/2, (Ha-Hd)/2]
+        decomp.append(H_decomp)
+        H = H_decomp[0]
+        n = next_n
+    assert(n == 8)
+    # lift H
+    X = hbc_transform(torch.eye(64, dtype=H.dtype, device=H.device))
+    X = X @ H
+    X = ihbc_transform(X)
+    decomp.append(torch.tril(X))
+    return decomp
 
-def fast_orth_quant(coeffs, H_sqrt, n, hat_coeffs, qidxs, error, cb, cliques, B_2, basis_mats, device):
-    tr_H_sqrt = torch.diagonal(H_sqrt).sum()
-    if n == 8:
-        for c in range(8):
-            target = coeffs[cliques[c]].clone()
-            for cp in range(c):
-                B_curr = basis_mats[cliques[c]]
-                B_prior = basis_mats[cliques[cp]]
-                cross = ((B_curr @ H_sqrt).unsqueeze(1) * B_prior.unsqueeze(0)).sum(dim=(-2, -1)) / tr_H_sqrt / 64
-                target = target + cross @ error[cliques[cp]]
-            hat, idx = cb.quantize(target.unsqueeze(0).float())
-            hat_coeffs[cliques[c]] = hat[0].squeeze(0).to(coeffs.dtype)
-            qidxs.append(idx[0].squeeze(0))
-            error[cliques[c]] = coeffs[cliques[c]] - hat_coeffs[cliques[c]]
-        return
-    next_n = n // 2
-    Ha, Hb = H_sqrt[:next_n, :next_n], H_sqrt[:next_n, next_n:]
-    Hc, Hd = H_sqrt[next_n:, :next_n], H_sqrt[next_n:, next_n:]
-    H_decomp = [(Ha+Hd)/2, (Hb+Hc)/2, (Hb-Hc)/2, (Ha-Hd)/2]
-    cliques_per_group = (n * n) // 32
-    group_size = (n * n) // 4
-    clique_vals = torch.stack([torch.tensor(cliques[c % 8], dtype=torch.long, device=device) + 64 * (c // 8) for c in range(cliques_per_group)])
-    for b in range(4):
-        corrections = torch.zeros(cliques_per_group, 8, dtype=coeffs.dtype, device=device)
-        for a in range(b):
-            d, sign = 4, 0
-            for i in range(4):
-                if torch.allclose(B_2[i] @ B_2[a], B_2[b]):
-                    d, sign = i, +1
-                    break
-                if torch.allclose(B_2[i] @ B_2[a], -B_2[b]):
-                    d, sign = i, -1
-                    break
-            e_a = error[a * group_size:(a+1) * group_size]
-            f = bt(ibt(e_a, next_n) @ H_decomp[d], next_n)
-            corrections += sign * f[clique_vals] / tr_H_sqrt / next_n**2
-        coeffs_b = coeffs[b * group_size:(b+1) * group_size].clone()
-        for c_ind in range(cliques_per_group):
-            coeffs_b[clique_vals[c_ind]] += corrections[c_ind]
-        hat_b = hat_coeffs[b * group_size : (b+1) * group_size]
-        error_b = error[b * group_size : (b+1) * group_size]
-        fast_orth_quant(coeffs_b, H_decomp[0], next_n, hat_b, qidxs, error_b, cb, cliques, B_2, basis_mats, device)
+def fast_HL_multiply(X,H):
+    return fast_HL_multiply_sub(X,decompose_H(H))
 
-def fast_orth_quant_wrapper(Wr, Hr, codebook, device):
-    dtype = Wr.dtype
-    orig_m, orig_n = Wr.shape
-    n = max(8, int(2 ** torch.ceil(torch.log2(torch.tensor(max(orig_n, orig_m))))))
-    Wr = torch.nn.functional.pad(Wr, (0, n - orig_n, 0, n - orig_m), mode='constant', value=0.0)
-    glog.info(f"n: {n}")
-    glog.info(f"orig_m: {orig_m}")
-    glog.info(f"orig_n: {orig_n}")
+def fast_HL_multiply_sub(X,DEC):
+    if len(DEC) == 1:
+        (Y,) = DEC
+        return X @ Y
+    (H0,H1,H2,H3) = DEC[0]
+    Xshape = X.shape
+    n = X.shape[-1]
+    X = X.reshape(-1,4,n//4)
+    Y = fast_HL_multiply_sub(X,DEC[1:])
+    Y[:,0,:] += H_multiply(X[:,1,:],H1) + H_multiply(X[:,3,:],H3) - H_multiply(X[:,2,:],H2)
+    Y[:,1,:] += H_multiply(X[:,3,:],H2) - H_multiply(X[:,2,:],H3)
+    Y[:,2,:] += H_multiply(X[:,3,:],H1)
+    return Y.reshape(Xshape)
 
-    if Hr.shape[0] < n: # not mn bc rows are independent so those would be 0 anyways
-        pad_size = n - Hr.shape[0]
-        Hr = torch.nn.functional.pad(Hr, (0, pad_size, 0, pad_size), mode='constant', value=0.0)
-        for i in range(orig_n, n):
-            Hr[i, i] = 1
+def ldlq_helper(X, future_error, DEC, cb, Qidxs):
+    m, n = X.shape
+    if len(DEC) == 1:
+        (J,) = DEC
+        hatX = torch.zeros_like(X)
+        error = torch.zeros_like(X)
+        for c in range(7, -1, -1):
+            start = 8 * c
+            end = 8 * c + 8
+            Y = X[:, start:end] + future_error[:, start:end]
+            if end < 64:
+                Y = Y + error[:, end:] @ J[end:, start:end]
+            q_hat, q_idx = cb.quantize(Y.float())
+            q_hat = q_hat.to(X.dtype)
+            hatX[:, start:end] = q_hat
+            error[:, start:end] = X[:, start:end] - q_hat
+            Qidxs[:, c] = q_idx.reshape(m)
+        return hatX
+    (H0, H1, H2, H3) = DEC[0]
+    X = X.reshape(m, 4, n // 4)
+    future_error = future_error.reshape(m, 4, n // 4)
+    X = [X[:, i].contiguous() for i in range(4)]
+    future_error = [future_error[:, i].contiguous() for i in range(4)]
+    QI = [Qidxs[:, i * (n // 32):(i + 1) * (n // 32)] for i in range(4)]
+    res3 = ldlq_helper(X[3], future_error[3], DEC[1:], cb, QI[3])
+    error3 = X[3] - res3
+    future_error2 = future_error[2] + H_multiply(error3, H1)
+    res2 = ldlq_helper(X[2], future_error2, DEC[1:], cb, QI[2])
+    error2 = X[2] - res2
+    future_error1 = future_error[1] + H_multiply(error3, H2) - H_multiply(error2, H3)
+    res1 = ldlq_helper(X[1], future_error1, DEC[1:], cb, QI[1])
+    error1 = X[1] - res1
+    future_error0 = future_error[0] + H_multiply(error1, H1) - H_multiply(error2, H2) + H_multiply(error3, H3)
+    res0 = ldlq_helper(X[0], future_error0, DEC[1:], cb, QI[0])
+    return torch.stack([res0, res1, res2, res3], dim=1).reshape(m, n)
+
+def bulk_LDLQ(X, A, cb, H, passes):
+    m, n = X.shape
+    d = 8
+    while m % (2 * d) == 0 and n % (2 * d) == 0:
+        d *= 2
+    X = X.reshape(m // d, d, n // d, d).permute(0, 2, 1, 3).contiguous()
+    coeffs = ihbc_transform(X.reshape((m // d) * (n // d), d, d)).reshape(m // d, n // d, d * d)
+    Xscale = coeffs.square().mean().sqrt() / cb.opt_scale
+    coeffs = coeffs / Xscale
+    Qidxs = torch.zeros(m // d, n // d, d * d // 8, dtype=cb.idx_dtype, device=coeffs.device)
+    A = A.reshape(n // d, d, n // d, d).permute(0, 2, 1, 3).contiguous().clone()
+    for i in range(n // d):
+        A[:, i] = A[:, i] / A[i, i].diagonal().mean()
+    DEC = [decompose_H(A[i, i].contiguous()) for i in range(n // d)]
+
+    hat_coeffs = torch.zeros_like(coeffs)
+    error = torch.zeros_like(coeffs)
+    for i in range(n // d - 1, -1, -1):
+        future_error = torch.zeros_like(coeffs[:, i])
+        for j in range(i + 1, n // d):
+            future_error += H_multiply(error[:, j], A[j, i])
+        hat_coeffs[:, i] = ldlq_helper(coeffs[:, i], future_error, DEC[i], cb, Qidxs[:, i])
+        error[:, i] = coeffs[:, i] - hat_coeffs[:, i]
     
-    cliques = [
-        [0, 2, 11, 25, 33, 39, 47, 57],
-        [1, 3, 10, 24, 32, 38, 46, 56],
-        [4, 6, 15, 29, 35, 37, 43, 61],
-        [5, 7, 14, 28, 34, 36, 42, 60],
-        [12, 18, 20, 26, 44, 53, 55, 62],
-        [13, 19, 21, 27, 45, 52, 54, 63],
-        [8, 16, 22, 30, 40, 49, 51, 58],
-        [9, 17, 23, 31, 41, 48, 50, 59]
-    ]
+    if passes > 0:
+        H = H.reshape(n // d, d, n // d, d).permute(0, 2, 1, 3).contiguous().clone()
+        for i in range(n // d):
+            H[:, i] = H[:, i] / H[i, i].diagonal().mean()
+        DEC = [decompose_H(H[i, i].contiguous()) for i in range(n // d)]
+        for _ in range(passes):
+            total_error = hat_coeffs - coeffs
+            hat_coeffs = torch.zeros_like(coeffs)
+            error = torch.zeros_like(coeffs)
+            for i in range(n // d - 1, -1, -1):
+                future_error = torch.zeros_like(coeffs[:, i])
+                for j in range(i + 1, n // d):
+                    future_error += H_multiply(error[:, j], H[j, i])
+                for j in range(0, i):
+                    future_error -= H_multiply(total_error[:, j], H[j, i])
+                future_error -= (H_multiply(total_error[:, i], H[i, i]) - fast_HL_multiply_sub(total_error[:, i], DEC[i]))
+                hat_coeffs[:, i] = ldlq_helper(coeffs[:, i], future_error, DEC[i], cb, Qidxs[:, i])
+                error[:, i] = coeffs[:, i] - hat_coeffs[:, i]
 
-    B_2 = (hb_transform(torch.eye(4).double()) * 2).to(device)
-    basis_mats = (hb_transform(torch.eye(64).double()) * 8).to(device)
-    k = calculate_k(n * n)
-    S, V = torch.linalg.eigh(Hr)
-    S_sqrt = torch.sqrt(torch.clamp(S, min=0))
-    H_sqrt = V @ torch.diag(S_sqrt) @ V.T
-    W_flat = Wr.reshape(1, 2**k, 2**k)
-    W_reshaped = hb_transform_reshape(W_flat, k).reshape(1, n*n)
-    coeffs = hb_transform_loop(W_reshaped, k) / (2**k)
-    coeffs = coeffs.reshape(n*n)
-    norm = 1/n
-    coeffs = coeffs / norm
-    Wscale = coeffs.square().mean().sqrt() / codebook.opt_scale
-    coeffs = coeffs / Wscale
-    hat_coeffs = torch.zeros_like(coeffs, device=device)
-    qidxs_flat = []
-    error = torch.zeros(n * n, dtype=coeffs.dtype, device=device)
-    fast_orth_quant(coeffs, H_sqrt, n, hat_coeffs, qidxs_flat, error, codebook, cliques, B_2, basis_mats, device)
-    hat_coeffs = hat_coeffs * Wscale
-    hatWr = hb_transform(hat_coeffs.reshape(1, n*n)).reshape(n, n)
-    hatWr = hatWr[:orig_m, :orig_n]
-    Qidxs = torch.stack(qidxs_flat).reshape(n, n // 8)[:orig_m, :orig_n // 8]
-    return hatWr, Qidxs
+    hatW = hbc_transform((hat_coeffs * Xscale).reshape((m // d) * (n // d), d * d)).reshape(m // d, n // d, d, d)
+    return hatW.permute(0, 2, 1, 3).reshape(m, n), Qidxs.reshape(m, n // 8)
+
+def bulk_ldlq_wrapper(Wr, Hr, codebook, args, device='cpu'):
+    m, n = Wr.shape
+    S, V = torch.linalg.eigh(Hr.double())
+    H_sqrt = (V @ torch.diag(torch.sqrt(torch.clamp(S, min=0))) @ V.T).to(Wr.dtype)
+    del S, V
+    utils.clean()
+    return bulk_LDLQ(Wr, H_sqrt, codebook, Hr, getattr(args, 'greedy_passes', 0))
 
 def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     glog.info("at the top of quantize")
@@ -706,8 +560,8 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     W = W_orig.clone().to(dtype_).to(device)
     codebook = copy.deepcopy(codebook_orig).to(dtype_)
 
-    assert (m % 2 == 0)
-    assert (n % 4 == 0)
+    assert (m % 8 == 0)
+    assert (n % 8 == 0)
     assert (torch.all(torch.isfinite(H.cpu())))
     assert (torch.all(torch.isfinite(W.cpu())))
 
@@ -783,7 +637,7 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     glog.info("right before calling orth quantize from quantize")
     # hatWr, Qidxs = clique_quantize(Wr, codebook, device)
     # hatWr, Qidxs, Qidxs_blocks = clique_quantize_rounding(Wr, Hr, codebook, device)
-    hatWr, Qidxs = fast_orth_quant_wrapper(Wr, Hr, codebook, device)
+    hatWr, Qidxs = bulk_ldlq_wrapper(Wr, Hr, codebook, args, device)
     glog.info("right after calling orth quantize from quantize")
     
     Wr = Wr.cpu()

@@ -40,6 +40,7 @@ parser.add_argument('--scale_override', default=-1, type=float)
 parser.add_argument('--resid_scale_override', default=-1, type=float)
 parser.add_argument('--codebook', type=str)
 parser.add_argument('--quip_tune_iters', default=10, type=int)
+parser.add_argument('--greedy_passes', default=0, type=int)
 parser.add_argument('--use_fp64', action='store_true')
 parser.add_argument('--full_svd', action='store_true')
 parser.add_argument('--no_use_buffered', action='store_true')
@@ -143,6 +144,7 @@ def main(args):
     all_config = {'quant_args': args, 'model_config': model.config}
     quip_params = {
         'lora_rank': args.lora_rank,
+        'greedy_passes': args.greedy_passes,
         'rescale_WH': args.rescale_WH,
         'codebook': args.codebook,
         'codebook_version': cb.version,

@@ -122,23 +122,3 @@ avg_loss = 12.331220058724284: 100%|██████████| 256/256 [01:
 I0625 20:36:44.460106 810487 eval_ppl.py:63] c4 perplexity: 226663.015625
 
 It is a truth universally acknowledged thatOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-
-Llama layer index 1 sublayer o O(n^3) quantization test without incoh proc
-
-Error: 0.3023396887657189
-Proxy loss: 128.93265733142545
-
-Llama layer index 1 sublayer o O(n^3) quantization test with incoh proc
-
-Error: 0.30236664147423453
-Proxy loss: 128.8922901659992
-
-Llama layer index 1 sublayer o orth quantization test with no adaptive rounding with incoh proc
-
-Error: 0.3023555416223472
-Proxy loss: 129.17189320460454
-
-Llama layer index 1 sublayer o quip# with had incoh proc
-
-Error: 0.4360564445656344
-Proxy loss: 24.931341525781356
