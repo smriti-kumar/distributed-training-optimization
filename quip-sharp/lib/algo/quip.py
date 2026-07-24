@@ -9,6 +9,7 @@ from itertools import product
 
 from lib import utils
 
+from lib.algo import ldlq_fast
 
 def RHT_H(H, SU):
     return utils.matmul_hadUt(utils.matmul_hadUt(H * SU).T * SU)
@@ -496,6 +497,7 @@ def ldlq_helper(X, future_error, DEC, cb, Qidxs):
     return torch.stack([res0, res1, res2, res3], dim=1).reshape(m, n)
 
 def bulk_LDLQ(X, A, cb, H, passes):
+    ldlq_impl = ldlq_fast.ldlq_fast if (X.is_cuda and X.dtype == torch.float32) else ldlq_helper
     m, n = X.shape
     d = 8
     while m % (2 * d) == 0 and n % (2 * d) == 0:
@@ -516,7 +518,8 @@ def bulk_LDLQ(X, A, cb, H, passes):
         future_error = torch.zeros_like(coeffs[:, i])
         for j in range(i + 1, n // d):
             future_error += H_multiply(error[:, j], A[j, i])
-        hat_coeffs[:, i] = ldlq_helper(coeffs[:, i], future_error, DEC[i], cb, Qidxs[:, i])
+        # hat_coeffs[:, i] = ldlq_helper(coeffs[:, i], future_error, DEC[i], cb, Qidxs[:, i])
+        hat_coeffs[:, i] = ldlq_impl(coeffs[:, i], future_error, DEC[i], cb, Qidxs[:, i])
         error[:, i] = coeffs[:, i] - hat_coeffs[:, i]
     
     if passes > 0:
@@ -535,7 +538,8 @@ def bulk_LDLQ(X, A, cb, H, passes):
                 for j in range(0, i):
                     future_error -= H_multiply(total_error[:, j], H[j, i])
                 future_error -= (H_multiply(total_error[:, i], H[i, i]) - fast_HL_multiply_sub(total_error[:, i], DEC[i]))
-                hat_coeffs[:, i] = ldlq_helper(coeffs[:, i], future_error, DEC[i], cb, Qidxs[:, i])
+                # hat_coeffs[:, i] = ldlq_helper(coeffs[:, i], future_error, DEC[i], cb, Qidxs[:, i])
+                hat_coeffs[:, i] = ldlq_impl(coeffs[:, i], future_error, DEC[i], cb, Qidxs[:, i])
                 error[:, i] = coeffs[:, i] - hat_coeffs[:, i]
 
     hatW = hbc_transform((hat_coeffs * Xscale).reshape((m // d) * (n // d), d * d)).reshape(m // d, n // d, d, d)
@@ -820,7 +824,7 @@ def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
     H.add_(mu[None, :] * mu[:, None])
     n = H_data['n']
     # H = torch.eye(weights[0].shape[1], dtype=dtype_, device=device)
-    glog.info("set H to identity")
+    # glog.info("set H to identity")
     W = torch.vstack([
         weights[i].to(dtype_) / scales[i] for i in range(len(weights))
     ]).to(dtype_)
