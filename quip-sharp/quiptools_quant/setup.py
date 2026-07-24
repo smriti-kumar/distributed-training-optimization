@@ -30,7 +30,11 @@ setup(
             ['quiptools_quant_wrapper.cpp', 'quiptools_quant.cu'],
             extra_compile_args={
                 'cxx': ['-O3', '-std=c++17'],
-                'nvcc': ['-O3', '-std=c++17', '-lineinfo'],
+                # --expt-relaxed-constexpr: Kernel 3 (quiptools_quant.cu Section E)
+                # uses constexpr helper functions with loops (subtree_level_off etc)
+                # from __device__/__global__ template code to compute shared-memory
+                # layouts at compile time; nvcc needs this flag to allow that.
+                'nvcc': ['-O3', '-std=c++17', '-lineinfo', '--expt-relaxed-constexpr'],
             })
     ],
     cmdclass={'build_ext': cpp_extension.BuildExtension})

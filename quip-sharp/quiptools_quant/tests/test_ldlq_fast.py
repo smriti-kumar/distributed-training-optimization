@@ -90,12 +90,80 @@ def test_bit_exact_leaf(cb):
 
 @pytest.mark.parametrize('d', [16, 64])
 def test_bit_exact_small_tree(cb, d):
-    """Acceptance test 2: N = 4^4 = 256 (d=16) and N = 4^6 = 4096 (d=64)."""
+    """Acceptance test 2: N = 4^4 = 256 (d=16) and N = 4^6 = 4096 (d=64).
+
+    d=16 -> DEC has 1 internal level (below the default subtree_j=3), so
+    this exercises pure Python recursion + Kernel 1 + Kernel 2 only.
+    d=64 -> DEC has exactly 3 internal levels, so with the default
+    subtree_j=3 the *entire* call is handled by one Kernel 3 launch, no
+    Python-level recursion at all. See test_subtree_kernel_j_variants and
+    test_bit_exact_deep_tree below for the cases in between.
+    """
     g = torch.Generator(device=DEVICE).manual_seed(2 + d)
     p = 3
     A = torch.randn(d, d, device=DEVICE, generator=g, dtype=torch.float32)
     A = (A @ A.T + d * torch.eye(d, device=DEVICE)).to(torch.float32)  # symmetric PSD
     DEC = quip.decompose_H(A)
+    N = d * d
+
+    X = torch.randn(p, N, device=DEVICE, generator=g, dtype=torch.float32)
+    future_error = torch.randn(p, N, device=DEVICE, generator=g, dtype=torch.float32) * 0.1
+
+    Qidxs_ref = torch.zeros(p, N // 8, dtype=cb.idx_dtype, device=DEVICE)
+    hatX_ref = quip.ldlq_helper(X.clone(), future_error.clone(), DEC, cb, Qidxs_ref)
+
+    Qidxs_fast = torch.zeros(p, N // 8, dtype=cb.idx_dtype, device=DEVICE)
+    hatX_fast = ldlq_fast_mod.ldlq_fast(X.clone(), future_error.clone(), DEC, cb, Qidxs_fast)
+
+    assert torch.equal(Qidxs_ref, Qidxs_fast), 'Qidxs mismatch'
+    torch.testing.assert_close(hatX_ref, hatX_fast, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize('subtree_j', [None, 1, 2, 3])
+def test_subtree_kernel_j_variants(cb, subtree_j):
+    """Acceptance test 2 variant: same d=64 tree (3 internal levels) as
+    above, but forcing each subtree_j value explicitly. subtree_j=3 routes
+    the whole call through one Kernel 3 launch; subtree_j=1 or 2 make the
+    Python recursion run for 2 or 1 levels before handing off to Kernel 3;
+    subtree_j=None disables Kernel 3 entirely (pure recursion + Kernel 1/2).
+    All four must agree with the reference to the same tolerance.
+    """
+    d = 64
+    g = torch.Generator(device=DEVICE).manual_seed(100 + (subtree_j or 0))
+    p = 3
+    A = torch.randn(d, d, device=DEVICE, generator=g, dtype=torch.float32)
+    A = (A @ A.T + d * torch.eye(d, device=DEVICE)).to(torch.float32)
+    DEC = quip.decompose_H(A)
+    N = d * d
+
+    X = torch.randn(p, N, device=DEVICE, generator=g, dtype=torch.float32)
+    future_error = torch.randn(p, N, device=DEVICE, generator=g, dtype=torch.float32) * 0.1
+
+    Qidxs_ref = torch.zeros(p, N // 8, dtype=cb.idx_dtype, device=DEVICE)
+    hatX_ref = quip.ldlq_helper(X.clone(), future_error.clone(), DEC, cb, Qidxs_ref)
+
+    Qidxs_fast = torch.zeros(p, N // 8, dtype=cb.idx_dtype, device=DEVICE)
+    hatX_fast = ldlq_fast_mod.ldlq_fast(X.clone(), future_error.clone(), DEC, cb, Qidxs_fast,
+                                          subtree_j=subtree_j)
+
+    assert torch.equal(Qidxs_ref, Qidxs_fast), f'Qidxs mismatch at subtree_j={subtree_j}'
+    torch.testing.assert_close(hatX_ref, hatX_fast, rtol=1e-5, atol=1e-5)
+
+
+def test_bit_exact_deep_tree(cb):
+    """d=128 -> N = 4^7 = 16384, DEC has 4 internal levels: one more than
+    the default subtree_j=3. This is the case none of the tests above cover
+    -- Kernel 3 triggers one level INTO the Python recursion (at depth=1,
+    not at the root), so both the plain-Python-recursion path and the
+    Kernel-3 handoff are exercised within a single ldlq_fast call.
+    """
+    d = 128
+    g = torch.Generator(device=DEVICE).manual_seed(42)
+    p = 2
+    A = torch.randn(d, d, device=DEVICE, generator=g, dtype=torch.float32)
+    A = (A @ A.T + d * torch.eye(d, device=DEVICE)).to(torch.float32)
+    DEC = quip.decompose_H(A)
+    assert len(DEC) - 1 == 4, f'expected 4 internal levels for d=128, got {len(DEC) - 1}'
     N = d * d
 
     X = torch.randn(p, N, device=DEVICE, generator=g, dtype=torch.float32)
