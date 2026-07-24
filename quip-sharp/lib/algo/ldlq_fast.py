@@ -160,40 +160,22 @@ class _FlatDEC:
         return cached
 
 
-# Caches keyed by id() of the caller's cb / DEC objects. This is safe within
-# bulk_LDLQ's normal usage pattern -- the same DEC list object is reused
-# across every greedy-search pass for a given tile-column, and the same cb
-# object is reused for the whole quantize() call -- but id() can in principle
-# be reused after garbage collection if you build and discard many DEC lists
-# with the same lifetime pattern. Call clear_cache() if you do something more
-# exotic (e.g. constructing fresh DEC objects per call in a tight loop) and
-# want to be safe rather than rely on this.
-_cb_table_cache = {}
-_dec_cache = {}
-
-
-def clear_cache():
-    _cb_table_cache.clear()
-    _dec_cache.clear()
-
-
-def _get_cb_tables(cb, device):
-    key = (id(cb), str(device))
-    tables = _cb_table_cache.get(key)
-    if tables is None:
-        _check_codebook(cb)
-        tables = _CodebookTables(cb, device)
-        _cb_table_cache[key] = tables
-    return tables
-
-
-def _get_flat_dec(DEC, device):
-    key = (id(DEC), str(device))
-    flat = _dec_cache.get(key)
-    if flat is None:
-        flat = _FlatDEC(DEC).to(device)
-        _dec_cache[key] = flat
-    return flat
+# NOTE, history: this used to cache _FlatDEC/_CodebookTables keyed by
+# id(DEC)/id(cb), on the theory that the same DEC list is reused across every
+# greedy-search pass for a given tile-column. That's true, but id() is only
+# safe as a cache key for objects known to stay alive for the cache's entire
+# lifetime -- and DEC does NOT: bulk_LDLQ builds a fresh DEC list per
+# sublayer call and lets it go out of scope once that call returns. Once a
+# DEC list is garbage collected, CPython is free to reuse its address for
+# the NEXT DEC list built for a *different* sublayer (a different tile size
+# d, hence a different tree depth) -- and the id()-keyed cache would then
+# silently hand back a stale _FlatDEC built for the wrong shape. This isn't
+# hypothetical: it produced a real crash ("X's last dimension must be
+# 64*4^j") partway through a production run, nondeterministically (it
+# depends on GC/allocator timing, which is why some earlier layers were
+# fine). So: no caching here. _FlatDEC/_CodebookTables are cheap to build
+# (a handful of torch.cat/.to() calls on small tensors -- negligible next to
+# the actual LDLQ computation) and are rebuilt fresh on every call.
 
 
 def _recurse(X, future_error, flat, tables, Qidxs, depth, subtree_j):
@@ -278,7 +260,8 @@ def ldlq_fast(X, future_error, DEC, cb, Qidxs, subtree_j=DEFAULT_SUBTREE_J):
         f'those depths -- see the note on subtree_kernel<J> in quiptools_quant.cu), got {subtree_j}')
 
     device = X.device
-    flat = _get_flat_dec(DEC, device)
-    tables = _get_cb_tables(cb, device)
+    _check_codebook(cb)
+    flat = _FlatDEC(DEC).to(device)
+    tables = _CodebookTables(cb, device)
 
     return _recurse(X, future_error, flat, tables, Qidxs, 0, subtree_j)
