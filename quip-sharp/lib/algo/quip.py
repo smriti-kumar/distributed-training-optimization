@@ -808,6 +808,25 @@ def original_quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
 
     return hatW.to(W_orig_dtype).to(orig_device), attr
 
+def log_proxy_loss(hatW, W, H, shapes, scales, tag):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    Hd = H.to(device, torch.float64)
+    error_num, error_den = 0.0, 0.0
+    proxy = 0.0
+    curr = 0
+    for shape, scale in zip(shapes, scales):
+        r, s = shape[0], float(scale)
+        Wb = W[curr:curr + r].to(device, torch.float64) * s
+        Eb = hatW[curr:curr + r].to(device, torch.float64) * s - Wb
+        proxy += ((Eb @ Hd) * Eb).sum().item()
+        error_num += Eb.square().sum().item()
+        error_den += Wb.square().sum().item()
+        curr += r
+        del Wb, Eb
+    glog.info(f'{tag}: proxy loss: {proxy}, error: {(error_num / error_den) ** 0.5}')
+    del Hd
+    utils.clean()
+
 def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
     glog.info("top of quantize linear")
     dtype_ = torch.float64 if args.use_fp64 else torch.float32
@@ -831,6 +850,7 @@ def quantize_linear(weights, save_path, hessian_path, cb, args, device='cpu'):
     H = utils.regularize_H(H, n, args.sigma_reg)
     glog.info("right before calling quantize from quantize linear")
     hatW, attr = quantize(H, W, args.lora_rank, cb, args, device)
+    log_proxy_loss(hatW, W, H, shapes, scales, os.path.basename(save_path))
     glog.info("right after calling quantize from quantize linear")
     # if len(scales) == 1:
     #     # fuse single scale into SV too
