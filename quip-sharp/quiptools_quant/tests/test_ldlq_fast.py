@@ -1,10 +1,12 @@
 """Acceptance tests for quiptools_quant / lib.algo.ldlq_fast.
 
 These implement the acceptance tests from workload_analysis.md section 6.
-They require a CUDA GPU and the compiled `quiptools_quant` extension (see
-../README instructions in the top-level report), so they are written to be
-run on the cluster -- they were NOT executed while writing this kernel (this
-development environment has no GPU). Run with:
+They require a CUDA GPU and the compiled `quiptools_quant_cuda` extension
+(built from this quiptools_quant/ directory -- note the module's import name
+is deliberately different from the directory name, see the note at the top
+of quiptools_quant/setup.py), so they are written to be run on the cluster --
+they were NOT executed while writing this kernel (this development
+environment has no GPU). Run with:
 
     cd quiptools_quant && pip install -e . && cd ..
     pytest quiptools_quant/tests/test_ldlq_fast.py -v
@@ -49,14 +51,14 @@ def _random_lower_triangular(n, device, generator):
 
 def test_codebook_port_isolation(cb):
     """Acceptance test 4: 10^6 random 8-vectors, require 100% identical indices."""
-    import quiptools_quant
+    import quiptools_quant_cuda
 
     g = torch.Generator(device=DEVICE).manual_seed(0)
     X = (torch.randn(1_000_000, 8, device=DEVICE, generator=g) * 0.6).contiguous()
 
     ref_vals, ref_idx = cb.quantize(X)
 
-    dev_vals, dev_idx = quiptools_quant.e8p12_quantize_batch(
+    dev_vals, dev_idx = quiptools_quant_cuda.e8p12_quantize_batch(
         X, cb.grid_part.float(), cb.grid_part_norm.float(),
         cb.part_abs_map.long(), cb.grid_abs_odd.to(torch.uint8))
 

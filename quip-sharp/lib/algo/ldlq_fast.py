@@ -27,7 +27,13 @@ Constraints (see workload_analysis.md section 5):
 
 import torch
 
-import quiptools_quant
+# NOT `import quiptools_quant` -- the compiled extension's importable name is
+# `quiptools_quant_cuda`, deliberately different from the quiptools_quant/
+# source directory it's built from (see the note at the top of
+# quiptools_quant/setup.py: same name for both can resolve to an empty
+# namespace package instead of the compiled .so once the repo root is on
+# sys.path).
+import quiptools_quant_cuda
 
 _E8P12_CLASS_NAME = 'E8P12_codebook'
 
@@ -150,7 +156,7 @@ def ldlq_fast(X, future_error, DEC, cb, Qidxs):
     flat = _get_flat_dec(DEC, device)
     tables = _get_cb_tables(cb, device)
 
-    return quiptools_quant.ldlq_fast(
+    return quiptools_quant_cuda.ldlq_fast(
         X.contiguous(),
         future_error.contiguous(),
         flat.Hcat3_list,
