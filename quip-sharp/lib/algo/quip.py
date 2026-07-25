@@ -543,7 +543,7 @@ def bulk_LDLQ(X, A, cb, H, passes):
                 error[:, i] = coeffs[:, i] - hat_coeffs[:, i]
 
     hatW = hbc_transform((hat_coeffs * Xscale).reshape((m // d) * (n // d), d * d)).reshape(m // d, n // d, d, d)
-    return hatW.permute(0, 2, 1, 3).reshape(m, n), Qidxs.reshape(m, n // 8)
+    return hatW.permute(0, 2, 1, 3).reshape(m, n), Qidxs.reshape(m, n // 8), Xscale
 
 def bulk_ldlq_wrapper(Wr, Hr, codebook, args, device='cpu'):
     m, n = Wr.shape
@@ -641,7 +641,7 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     glog.info("right before calling orth quantize from quantize")
     # hatWr, Qidxs = clique_quantize(Wr, codebook, device)
     # hatWr, Qidxs, Qidxs_blocks = clique_quantize_rounding(Wr, Hr, codebook, device)
-    hatWr, Qidxs = bulk_ldlq_wrapper(Wr, Hr, codebook, args, device)
+    hatWr, Qidxs, Xscale = bulk_ldlq_wrapper(Wr, Hr, codebook, args, device)
     glog.info("right after calling orth quantize from quantize")
     
     Wr = Wr.cpu()
@@ -677,6 +677,7 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
             torch.float16).to(orig_device),  # fuse Wscale into SV
         'scaleWH': scaleWH,
         'hatWr': hatWr.to(orig_device),
+        'Xscale': Xscale.to(orig_device),
         # 'Qidxs_blocks': Qidxs_blocks.to(orig_device),
     }
 

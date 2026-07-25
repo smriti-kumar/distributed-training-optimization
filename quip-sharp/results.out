@@ -122,3 +122,30 @@ avg_loss = 12.331220058724284: 100%|██████████| 256/256 [01:
 I0625 20:36:44.460106 810487 eval_ppl.py:63] c4 perplexity: 226663.015625
 
 It is a truth universally acknowledged thatOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+
+bulk ldlq no finetuning 3 greedy passes llama 2-7b 2 bit
+
+  0%|          | 0/83 [00:00<?, ?it/s]I0724 18:51:44.414892 3527429 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.0296197540788765: 100%|██████████| 83/83 [00:41<00:00,  2.02it/s]
+I0724 18:52:24.361946 3527429 eval_ppl.py:63] wikitext2 perplexity: 7.611191272735596
+  0%|          | 0/256 [00:00<?, ?it/s]I0724 18:53:58.560260 3527429 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.2703802110627294: 100%|██████████| 256/256 [02:08<00:00,  1.99it/s]
+I0724 18:56:06.860029 3527429 eval_ppl.py:63] c4 perplexity: 9.683082580566406
+
+It is a truth universally acknowledged that the number of books in a library is directly proportional to the number of books the library has. surely the library is a place to be visited.
+And when you do visit the library, you will find that it is a place to be visited.
+It is a truth universally acknowledged that the number of books
+
+bulk ldlq no finetuning 5 greedy passes llama 2-7b 2 bit
+
+  0%|          | 0/83 [00:00<?, ?it/s]I0725 12:17:46.805800 1713245 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.0279097916131996: 100%|██████████| 83/83 [00:47<00:00,  1.74it/s]
+I0725 12:18:27.469317 1713245 eval_ppl.py:63] wikitext2 perplexity: 7.5981879234313965
+  0%|          | 0/256 [00:00<?, ?it/s]I0725 12:20:08.983182 1713245 graph_wrapper.py:36] Built CUDA graph of model.
+avg_loss = 2.2697349146474153: 100%|██████████| 256/256 [02:08<00:00,  1.99it/s]
+I0725 12:22:17.158618 1713245 eval_ppl.py:63] c4 perplexity: 9.676835060119629
+
+It is a truth universally acknowledged that the number of women in the world is increasing. nobody wants to marry a woman, so why is the number of women increasing?
+I am not sure what this is all about.
+I think I have been married to a woman.
+I think I have been married to a woman. I think I have been

@@ -3,7 +3,6 @@ Utilities for fine tuning
 """
 import copy
 from operator import attrgetter
-import time
 
 import glog
 import torch
@@ -275,10 +274,20 @@ def build_clique_state(saved_linear, device):
         orig_shape = (sum(out_dims), in_dim)
     else:
         orig_shape = saved_linear['shapes'][0]
+
+    m, n = orig_shape
+    d = 8
+    while m % (2 * d) == 0 and n % (2 * d) == 0:
+        d *= 2
+
+    neighbors = torch.load('e8_2bit_neighbors.pt', map_location=device)
+
+    Qidxs = saved_linear['Qidxs']
+    Qidxs = Qidxs.to(device).reshape(m // d, n // d, d * d // 8).clone()
  
     return {
         'hatWr': saved_linear['hatWr'].to(device).clone(),
-        'Qidxs': saved_linear['Qidxs'].to(device).clone(),
+        'Qidxs': Qidxs,
         'SU': saved_linear['SU'],
         'SV': saved_linear['SV'],
         'scaleWH': saved_linear.get('scaleWH'),
@@ -286,6 +295,10 @@ def build_clique_state(saved_linear, device):
         'orig_shape': orig_shape,
         'shapes': saved_linear['shapes'],
         'scales': saved_linear['scales'], 
+        'Xscale': saved_linear['Xscale'].to(device),
+        'd': d,
+        'neighbors_table': neighbors['table'].to(device),
+        'directions': neighbors['directions'].to(device)
     }
 
 def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_dl, valid_dl, args):
@@ -293,39 +306,36 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
     momentum_rate = args.sparse_ft_momentum_rate
 
     for epoch in range(args.sparse_ft_epochs):
-        torch.cuda.synchronize()
-        epoch_start = time.time()
-
         mixed_layer.zero_grad()
 
-        torch.cuda.synchronize()
-        t0 = time.time()
         source, target = next(iter(train_dl))
         source = source.to(device).float()
         target = target.to(device).float()
-        torch.cuda.synchronize()
-        glog.info(f"Data loading: {time.time() - t0:.3f}s")
+        glog.info(f"Data loading")
 
-        t0 = time.time()
         output = mixed_layer(source.to(device), position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
         loss = torch.nn.MSELoss()(output, target)
-        torch.cuda.synchronize()
-        glog.info(f"Forward pass: {time.time() - t0:.3f}s")
+        glog.info(f"Forward pass")
 
-        t0 = time.time()
         loss.backward()
-        torch.cuda.synchronize()
-        glog.info(f"Backward pass: {time.time() - t0:.3f}s")
+        glog.info(f"Backward pass")
 
         glog.info(f"epoch {epoch}, loss: {loss.item()}")
+
+        # for each weight matrix
+            # for each block
+                # calculate scores for each 8 group which of the 240 neighbors its best to flip to, flip based on best scores
+        
+        # for the 240 neighbors, need to make a lookup matrix of size 2^16 x 240, represents valid neighbor for each possible point on the lattice
+        # should also store for each of the 240 per point on the lattice where it would move to if that was selected
+        # have to account for corner cases where we might move off the lattice, store -1 or the same point in that location
 
         for quant_i, (linear_attr, name) in enumerate(quant_order):
             module = attrgetter(linear_attr)(mixed_layer)
             state = clique_state[name]
 
-            t0 = time.time()
             grad_hatW = module.weight.grad.detach().to(module.weight.dtype)
-            
+
             if args.incoh_mode == 'had': # since indices are based on the incoherence processed weights, need to transform gradients too
                 grad_Wr = quip.RHT_W(grad_hatW, state['SU'].to(device), state['SV'].to(device))
             elif args.incoh_mode == 'kron':
@@ -333,80 +343,45 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             else:
                 raise NotImplementedError
             
-            torch.cuda.synchronize()
-            glog.info(f"Gradient processing and incoherence transform: {time.time() - t0:.3f}s")
+            glog.info(f"Gradient processing and incoherence transform")
 
-            t0 = time.time()
-            m, n = state['Qidxs'].shape
-            if grad_Wr.shape[0] < m or grad_Wr.shape[1] < n: # reshaping grad to match Qidxs shape of (m, n//8, 8)
-                grad_Wr = torch.nn.functional.pad(grad_Wr, (0, n * 8 - grad_Wr.shape[1], 0, m - grad_Wr.shape[0]), value=0.0)
-            grad_coeffs = grad_Wr[:m, :n * 8].reshape(m, n, 8)
-            torch.cuda.synchronize()
-            glog.info(f"Gradient reshaping and to coefficient processing: {time.time() - t0:.3f}s")
+            m, n = state['orig_shape']
+            d = state['d']
+            grad_blocks = grad_Wr.reshape(m // d, d, n // d, d).permute(0, 2, 1, 3).contiguous()
+            grad_coeffs = quip.ihbc_transform(grad_blocks.reshape((m // d) * (n // d), d, d)).reshape(m // d, n // d, d * d // 8, 8)
+            glog.info(f"Gradient to coefficient processing")
 
-            t0 = time.time()
             if state['momentum'] is None:
                 state['momentum'] = torch.zeros_like(grad_coeffs)
             state['momentum'] = momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_coeffs
+            glog.info(f"Momentum update")
 
-            neighbors, neighbor_values = state['codebook'].get_neighbors(state['Qidxs']) # (m, n//8, 8), (m, n//8, 8, 8)
-            curr_values = state['codebook'].grid[state['Qidxs_blocks'].long()] # (m, n//8, 8)
-            torch.cuda.synchronize()
-            glog.info(f"Momentum and finding neighbors: {time.time() - t0:.3f}s")
+            directions = state['directions']
+            neighbors_table = state['neighbors_table']
+            for i in range(m // d):
+                for j in range(n // d):
+                    Q_curr = state['Qidxs'][i, j]
+                    momentum_curr = state['momentum'][i, j]
+                    scores = momentum_curr @ directions.T
+                    neighbors = neighbors_table[Q_curr.long()]
+                    scores = scores.masked_fill(neighbors < 0, float('inf'))
+                    best_scores, best_directions = scores.min(dim=-1)
+                    values, inds = torch.topk(best_scores, args.sparse_ft_num_flips, largest=False)
+                    inds = inds[values < 0]
+                    if inds.numel() == 0: 
+                        continue
+                    Q_curr[inds] = neighbors_table[Q_curr[inds].long(), best_directions[inds]]
+            glog.info(f"Updating coodebook indices with new values")
 
-            t0 = time.time()
-            scores = torch.einsum('mni,mnbi->mnb', state['momentum'], neighbor_values - curr_values.unsqueeze(2)) # vectorized form of taking inner product of momentum and flipping each bit
-            torch.cuda.synchronize()
-            glog.info(f"Score calculation: {time.time() - t0:.3f}s")
-
-            t0 = time.time()
-            flat_scores = scores.reshape(-1)
-            vals, min_i = torch.topk(flat_scores, args.sparse_ft_num_flips, largest=False) # want most negative scores, means change and momentum disagree so we should flip
-            bits = min_i % 8
-            remainder = min_i // 8
-            cols = remainder % (n // 8)
-            rows = remainder // (n // 8)
-            glog.info(f"Score for chosen flips: {vals}")
-            glog.info(f"Finding indices to flip: {time.time() - t0:.3f}s")
-
-            t0 = time.time()
-            seen_inds = set() # don't want to make 2 changes within the same clique for a given block
-            flip = torch.zeros(rows.shape[0], dtype=torch.bool, device=device)
-            for i in range(rows.shape[0]):
-                if (rows[i].item(), cols[i].item()) not in seen_inds:
-                    seen_inds.add((rows[i].item(), cols[i].item()))
-                    flip[i] = True
-            rows = rows[flip]
-            cols = cols[flip]
-            bits = bits[flip]
-
-            state['Qidxs'][rows, cols] = neighbors[rows, cols, bits]
-            torch.cuda.synchronize()
-            glog.info(f"Removing duplicate indices for flips and flipping: {time.time() - t0:.3f}s")
-
-            t0 = time.time()
-            # state['hatWr'] = state['hatWr'].to(module.weight.dtype)
-            # modified_blocks = sorted(set(zip(rows.tolist(), cols.tolist())))
-            # Wscale = state['SV'].abs().mean()
-            # for (r, c) in sorted(modified_blocks):
-            #     full_clique_vals = state['codebook'].grid[state['Qidxs_blocks'][r, c].long()].to(module.weight.dtype) # get coeffs for each clique from codebook
-            #     all_coeffs_block = torch.zeros(64, dtype=module.weight.dtype, device=device)
-            #     for cl in range(8):
-            #         all_coeffs_block[state['cliques'][cl]] = full_clique_vals[cl] # unshuffle from the clique order
-            #     hat_block = torch.sum(all_coeffs_block.view(64, 1, 1) * state['mats'], dim=0).to(module.weight.dtype) / torch.sqrt(state['norm']) # convert coeffs back into 8x8 block
-            #     hat_block = hat_block * Wscale
-            #     state['hatWr'][r * 8:(r + 1) * 8, c * 8:(c + 1) * 8] = hat_block # put patch in weight matrix of how block was edited
             Wscale = state['SV'].abs().mean()
-            new_coeffs = state['codebook'].grid[state['Qidxs'].long()]
-            orig_m, orig_n = state['orig_shape']
-            for r in sorted(set(rows.tolist())):
-                state['hatWr'][r, :n * 8] = new_coeffs[r].reshape(-1) * Wscale
-            state['hatWr'] = state['hatWr'][:orig_m, :orig_n]
-            torch.cuda.synchronize()
-            glog.info(f"Rebuilding and updating hatWr: {time.time() - t0:.3f}s")
+            total_scale = state['Xscale'] * Wscale
+            grid = state['codebook'].grid
+            coeffs = grid[state['Qidxs'].long()].reshape((m // d) * (n // d), d * d)
+            blocks = quip.hbc_transform((coeffs * total_scale)).reshape(m // d, n // d, d, d)
+            hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
+            glog.info(f"Rebuilding and updating hatWr")
 
-            t0 = time.time()
-            new_hatW = quip.incoherence_process(state['hatWr'], state['SU'].to(device), state['SV'].to(device), state.get('scaleWH'), args)
+            new_hatW = quip.incoherence_process(hatWr, state['SU'].to(device), state['SV'].sign().to(device), state.get('scaleWH'), args)
             new_hatW = new_hatW.to(module.weight.dtype)
             curr = 0
             pieces = []
@@ -415,8 +390,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                 curr += shape[0]
             with torch.no_grad():
                 module.weight.data.copy_(torch.cat(pieces).to(module.weight.dtype))
-            torch.cuda.synchronize()
-            glog.info(f"Incoherence processing and reshaping at the end: {time.time() - t0:.3f}s")
+            glog.info(f"Updating module weight")
 
     mixed_layer = mixed_layer.cpu()
     return mixed_layer
