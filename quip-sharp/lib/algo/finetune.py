@@ -280,7 +280,7 @@ def build_clique_state(saved_linear, device):
     while m % (2 * d) == 0 and n % (2 * d) == 0:
         d *= 2
 
-    neighbors = torch.load('e8_2bit_neighbors.pt', map_location=device)
+    neighbors = torch.load('e8_2bit_neighbors.pt', map_location=f'cuda:{device}')
 
     Qidxs = saved_linear['Qidxs']
     Qidxs = Qidxs.to(device).reshape(m // d, n // d, d * d // 8).clone()
@@ -370,7 +370,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                     inds = inds[values < 0]
                     if inds.numel() == 0: 
                         continue
-                    Q_curr[inds] = neighbors_table[Q_curr[inds].long(), best_directions[inds]]
+                    Q_curr[inds] = neighbors_table[Q_curr[inds].long(), best_directions[inds]].long()
             glog.info(f"Updating coodebook indices with new values")
 
             Wscale = state['SV'].abs().mean()
@@ -381,7 +381,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
             glog.info(f"Rebuilding and updating hatWr")
 
-            new_hatW = quip.incoherence_process(hatWr, state['SU'].to(device), state['SV'].sign().to(device), state.get('scaleWH'), args)
+            new_hatW = quip.incoherence_process(hatWr, state['SU'].to(f'cuda:{device}'), state['SV'].sign().to(f'cuda:{device}'), state.get('scaleWH'), args)
             new_hatW = new_hatW.to(module.weight.dtype)
             curr = 0
             pieces = []

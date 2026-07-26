@@ -665,7 +665,7 @@ def quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
     else:
         hatW = hatWr
 
-    Qidxs = codebook.maybe_pack_idxs(Qidxs)
+    # Qidxs = codebook.maybe_pack_idxs(Qidxs)
 
     attr = {
         'Qidxs': Qidxs.to(orig_device),
