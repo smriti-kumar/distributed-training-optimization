@@ -58,6 +58,11 @@ def incoherence_preprocess(H, W, args):
         SV = utils.rand_ortho_butterfly_noblock(m).to(dtype_).to(device)
         Hr = SU @ Hr @ SU.T
         Wr = SV @ Wr @ SU.T
+    elif args.incoh_mode == "had_left":
+        SU = (torch.randn(n, device=device).sign() + 1e-5).sign().to(dtype_)
+        SV = torch.ones(m, device=device).to(dtype_)
+        Hr = RHT_H(Hr, SU)
+        Wr = utils.matmul_hadUt(Wr * SU)
     else:
         raise NotImplementedError
     SV = SV.cpu()
@@ -81,6 +86,8 @@ def incoherence_process(hatWr, SU, SV, scaleWH, args):
     # reverse kronecker product
     elif args.incoh_mode == 'kron':
         hatWr = SV.T.to(device) @ hatWr @ SU.to(device)
+    elif args.incoh_mode == 'had_left':
+        hatWr = utils.matmul_hadU(hatWr) * SU.to(device)
     else:
         raise NotImplementedError
 
@@ -797,6 +804,7 @@ def original_quantize(H_orig, W_orig, rank, codebook_orig, args, device='cpu'):
 
     attr = {
         'Qidxs': Qidxs.to(orig_device),
+        'hatW': hatW.half().to(orig_device),
         'A': A,
         'B': B,
         'SU': SU.to(torch.float16).to(orig_device),

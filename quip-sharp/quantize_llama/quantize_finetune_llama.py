@@ -31,7 +31,7 @@ parser.add_argument('--sigma_reg2', default=1e-2, type=float)
 parser.add_argument('--incoh_mode',
                     default='had',
                     type=str,
-                    choices=['had', 'kron', 'none'])
+                    choices=['had', 'kron', 'none', 'had_left'])
 parser.add_argument('--lora_rank',
                     default=0,
                     type=int,
