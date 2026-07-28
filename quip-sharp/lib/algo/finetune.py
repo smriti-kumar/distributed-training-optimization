@@ -190,7 +190,7 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
             hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
             new_hatW = quip.incoherence_process(hatWr, state['SU'].to(device), state['SV'].sign().to(device), state.get('scaleWH'), args)
             saved_linear['hatW'] = new_hatW[:m, :n].half().cpu()
-            # saved_linear['hatWr'] = state['hatWr'].cpu()
+            saved_linear['hatWr'] = hatWr.half().cpu()
             # saved_linear['Qidxs_blocks'] = state['Qidxs_blocks'].cpu()
             saved_linear['Qidxs'] = state['Qidxs'].cpu()
             torch.save(saved_linear, save_path)
@@ -311,20 +311,19 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
     for epoch in range(args.sparse_ft_epochs):
         mixed_layer.zero_grad()
 
-        source, target = next(iter(train_dl))
-        source = source.to(device).float()
-        target = target.to(device).float()
-        glog.info(f"Data loading")
-
-        output = mixed_layer(source.to(device), position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
-        loss = torch.nn.MSELoss()(output, target)
-        glog.info(f"Forward pass")
-
-        loss.backward()
-        glog.info(f"Backward pass")
-
-        error = (output - target).norm()
-        glog.info(f"epoch {epoch}, loss: {loss.item()}, error: {error.item()}")
+        loss = 0
+        error = 0
+        count = 0
+        for source, target in train_dl:
+            source = source.to(device).float()
+            target = target.to(device).float()
+            output = mixed_layer(source, position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
+            loss = torch.nn.MSELoss()(output, target)
+            loss.backward()
+            loss += loss.item()
+            error += (output - target).norm().item()
+            count += 1
+        glog.info(f"epoch {epoch}, loss: {loss / count}, error: {error / count}")
 
         # for each weight matrix
             # for each block
