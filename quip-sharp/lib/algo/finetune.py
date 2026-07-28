@@ -13,7 +13,6 @@ from lib.linear import *
 
 from . import quip
 
-
 def finetune_decoder_layer(layer, name, device, train_dl, valid_dl, args):
     layer = layer.to(device)
 
@@ -181,13 +180,17 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
             save_path = f'{args.save_path}/{idx}_{name}.pt'
             saved_linear = torch.load(save_path, map_location=torch.device('cpu'))
             state = sparse_state[name]
-            from lib.algo.quip import incoherence_process
-            new_hatW = incoherence_process(
-                state['hatWr'], state['SU'].to(device), state['SV'].to(device),
-                state.get('scaleWH'), args)
-            orig_m, orig_n = state['orig_shape']
-            saved_linear['hatW'] = new_hatW[:orig_m, :orig_n].half().cpu()
-            saved_linear['hatWr'] = state['hatWr'].cpu()
+            m, n = state['orig_shape']
+            d = state['d']
+            Wscale = state['SV'].abs().mean()
+            total_scale = state['Xscale'] * Wscale
+            grid = state['codebook'].grid
+            coeffs = grid[state['Qidxs'].long()].reshape((m//d) * (n//d), d * d)
+            blocks = quip.hbc_transform((coeffs * total_scale)).reshape(m // d, n // d, d, d)
+            hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
+            new_hatW = quip.incoherence_process(hatWr, state['SU'].to(device), state['SV'].sign().to(device), state.get('scaleWH'), args)
+            saved_linear['hatW'] = new_hatW[:m, :n].half().cpu()
+            # saved_linear['hatWr'] = state['hatWr'].cpu()
             # saved_linear['Qidxs_blocks'] = state['Qidxs_blocks'].cpu()
             saved_linear['Qidxs'] = state['Qidxs'].cpu()
             torch.save(saved_linear, save_path)
@@ -320,7 +323,8 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
         loss.backward()
         glog.info(f"Backward pass")
 
-        glog.info(f"epoch {epoch}, loss: {loss.item()}")
+        error = (output - target).norm()
+        glog.info(f"epoch {epoch}, loss: {loss.item()}, error: {error.item()}")
 
         # for each weight matrix
             # for each block
