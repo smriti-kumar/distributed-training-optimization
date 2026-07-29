@@ -308,10 +308,23 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
     mixed_layer = mixed_layer.to(device)
     momentum_rate = args.sparse_ft_momentum_rate
 
+    val_loss = 0
+    count = 0
+    with torch.no_grad():
+        for source, target in valid_dl:
+            source = source.to(device).float()
+            target = target.to(device).float()
+            output = mixed_layer(source, position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
+            val_loss += torch.nn.MSELoss()(output, target).item()
+            count += 1
+    prev_loss = val_loss / count
+    prev_Q = {name: clique_state[name]['Qidxs'].clone() for _, name in quant_order}
+    prev_W = {la: attrgetter(la)(mixed_layer).weight.data.clone() for la, _ in quant_order}
+
     for epoch in range(args.sparse_ft_epochs):
         mixed_layer.zero_grad()
 
-        loss = 0
+        total_loss = 0
         error = 0
         count = 0
         for source, target in train_dl:
@@ -320,10 +333,12 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             output = mixed_layer(source, position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
             loss = torch.nn.MSELoss()(output, target)
             loss.backward()
-            loss += loss.item()
+            total_loss += loss.item()
             error += (output - target).norm().item()
             count += 1
-        glog.info(f"epoch {epoch}, loss: {loss / count}, error: {error / count}")
+        train_loss = total_loss / count
+        train_error = error / count
+        glog.info(f"epoch {epoch}, loss: {train_loss}, error: {train_error}")
 
         # for each weight matrix
             # for each block
@@ -394,6 +409,22 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             with torch.no_grad():
                 module.weight.data.copy_(torch.cat(pieces).to(module.weight.dtype))
             glog.info(f"Updating module weight")
+
+        val_loss = 0
+        count = 0
+        with torch.no_grad():
+            for source, target in valid_dl:
+                source = source.to(device).float()
+                target = target.to(device).float()
+                output = mixed_layer(source, position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
+                val_loss += torch.nn.MSELoss()(output, target).item()
+                count += 1
+        val_loss = val_loss / count
+        if val_loss < prev_loss:
+            prev_loss = val_loss
+            prev_Q = {name: clique_state[name]['Qidxs'].clone() for _, name in quant_order}
+            prev_W = {la: attrgetter(la)(mixed_layer).weight.data.clone() for la, _ in quant_order}
+        glog.info(f"epoch {epoch}: train {train_error:.4f}, valid {val_loss:.6e}, best {prev_loss:.6e}")
 
     mixed_layer = mixed_layer.cpu()
     return mixed_layer
