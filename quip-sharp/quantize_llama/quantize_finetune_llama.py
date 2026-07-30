@@ -1,6 +1,7 @@
 import argparse
 import os
 import time
+from operator import attrgetter
 
 import glog
 
@@ -130,6 +131,17 @@ def quantize_llama_layer(layer, idx, cb, args, device, pre_orig_emb, orig_emb,
         }, f'{args.save_path}/{idx}_layernorm.pt')
     del mixed_layer
 
+def get_quantized_layer(idx, model_config, args, device):
+    layer = LlamaDecoderLayer(model_config, idx)
+    for attr, name in [('self_attn.qkv_proj', 'qkv'), ('self_attn.o_proj', 'o'), ('mlp.upgate_proj', 'up'), ('mlp.down_proj', 'down')]:
+        saved = torch.load(f'{args.save_path}/{idx}_{name}.pt', map_location='cpu')
+        dense = finetune.linear_from_hatw(saved)
+        split = attr.split('.')
+        setattr(attrgetter('.'.join(split[:-1]))(layer), split[-1], dense)
+    layernorm = torch.load(f'{args.save_path}/{idx}_layernorm.pt', map_location='cpu')
+    layer.input_layernorm.weight.copy_(layernorm['input_layernorm'])
+    layer.post_attention_layernorm.weight.copy_(layernorm['post_attention_layernorm'])
+    return layer.to(device)
 
 def main(args):
     dtype_ = torch.float64 if args.use_fp64 else torch.float32
@@ -168,6 +180,7 @@ def main(args):
 
     nproc = torch.cuda.device_count()
     orig_emb_cache = [model.model.embed_tokens(devset)]
+    quantized_input = model.model.embed_tokens(devset)
     for _ in range(nproc):
         orig_emb_cache.append(
             torch.zeros(orig_emb_cache[0].shape,
@@ -227,11 +240,26 @@ def main(args):
                                                cb,
                                                args,
                                                cur_device,
-                                               orig_emb_cache[cur_device],
+                                               quantized_input if args.sparse_ft_epochs > 0 else orig_emb_cache[cur_device],
                                                orig_emb_cache[cur_device + 1],
                                                all_config['model_config'],
                                            ))
         proc_list[cur_device].start()
+
+        if args.sparse_ft_epochs > 0:
+            proc_list[cur_device].join()
+            quantized_layer = get_quantized_layer(i, all_config['model_config'], args, cur_device)
+            new_quant = torch.zeros_like(quantized_input)
+            pos_ids = position_ids.to(cur_device)
+            attn_mask = attention_mask.to(cur_device)
+            with torch.no_grad():
+                for j in range(args.devset_size // args.batch_size):
+                    s = slice(args.batch_size * j, args.batch_size * (j + 1))
+                    new_quant[s] = quantized_layer(quantized_input[s].to(cur_device), position_ids=pos_ids, attention_mask=attn_mask, use_cache=False, output_attentions=False)[0].cpu()
+            quantized_input = new_quant
+            quantized_layer.cpu()
+            del quantized_layer, pos_ids, attn_mask
+            utils.clean()
 
         cur_device = (cur_device + 1) % nproc
 

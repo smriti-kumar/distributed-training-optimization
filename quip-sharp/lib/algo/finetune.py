@@ -361,8 +361,6 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             else:
                 raise NotImplementedError
             
-            glog.info(f"Gradient processing and incoherence transform")
-
             m, n = state['orig_shape']
             d = state['d']
             grad_blocks = grad_Wr.reshape(m // d, d, n // d, d).permute(0, 2, 1, 3).contiguous()
@@ -389,7 +387,6 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                     if inds.numel() == 0: 
                         continue
                     Q_curr[inds] = neighbors_table[Q_curr[inds].long(), best_directions[inds]].long()
-            glog.info(f"Updating coodebook indices with new values")
 
             Wscale = state['SV'].abs().mean()
             total_scale = state['Xscale'] * Wscale
@@ -397,7 +394,6 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             coeffs = grid[state['Qidxs'].long()].reshape((m // d) * (n // d), d * d)
             blocks = quip.hbc_transform((coeffs * total_scale)).reshape(m // d, n // d, d, d)
             hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
-            glog.info(f"Rebuilding and updating hatWr")
 
             new_hatW = quip.incoherence_process(hatWr, state['SU'].to(f'cuda:{device}'), state['SV'].sign().to(f'cuda:{device}'), state.get('scaleWH'), args)
             new_hatW = new_hatW.to(module.weight.dtype)
@@ -408,7 +404,6 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                 curr += shape[0]
             with torch.no_grad():
                 module.weight.data.copy_(torch.cat(pieces).to(module.weight.dtype))
-            glog.info(f"Updating module weight")
 
         val_loss = 0
         count = 0
@@ -424,7 +419,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             prev_loss = val_loss
             prev_Q = {name: clique_state[name]['Qidxs'].clone() for _, name in quant_order}
             prev_W = {la: attrgetter(la)(mixed_layer).weight.data.clone() for la, _ in quant_order}
-        glog.info(f"epoch {epoch}: train {train_error:.4f}, valid {val_loss:.6e}, best {prev_loss:.6e}")
+        glog.info(f"epoch {epoch}: val loss: {val_loss:.6e}, best val loss: {prev_loss:.6e}")
 
     mixed_layer = mixed_layer.cpu()
     return mixed_layer
