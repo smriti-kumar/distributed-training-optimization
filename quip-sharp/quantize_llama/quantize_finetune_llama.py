@@ -2,6 +2,7 @@ import argparse
 import os
 import time
 from operator import attrgetter
+import gc
 
 import glog
 
@@ -138,10 +139,11 @@ def get_quantized_layer(idx, model_config, args, device):
         dense = finetune.linear_from_hatw(saved)
         split = attr.split('.')
         setattr(attrgetter('.'.join(split[:-1]))(layer), split[-1], dense)
+        del saved, dense
     layernorm = torch.load(f'{args.save_path}/{idx}_layernorm.pt', map_location='cpu')
     layer.input_layernorm.weight.copy_(layernorm['input_layernorm'])
     layer.post_attention_layernorm.weight.copy_(layernorm['post_attention_layernorm'])
-    return layer.to(device)
+    return layer.to(device).half()
 
 def main(args):
     dtype_ = torch.float64 if args.use_fp64 else torch.float32
@@ -248,6 +250,8 @@ def main(args):
 
         if args.sparse_ft_epochs > 0:
             proc_list[cur_device].join()
+            if cur_device == 0:
+                orig_emb_cache[0].copy_(orig_emb_cache[-1])
             quantized_layer = get_quantized_layer(i, all_config['model_config'], args, cur_device)
             new_quant = torch.zeros_like(quantized_input)
             pos_ids = position_ids.to(cur_device)
@@ -258,13 +262,17 @@ def main(args):
                     new_quant[s] = quantized_layer(quantized_input[s].to(cur_device), position_ids=pos_ids, attention_mask=attn_mask, use_cache=False, output_attentions=False)[0].cpu()
             quantized_input = new_quant
             quantized_layer.cpu()
-            del quantized_layer, pos_ids, attn_mask
+            del quantized_layer, pos_ids, attn_mask, new_quant
+            proc_list[cur_device].close()
+            proc_list[cur_device] = None
+            gc.collect()
             utils.clean()
 
         cur_device = (cur_device + 1) % nproc
 
     for p in proc_list:
-        p.join()
+        if p is not None:
+            p.join()
 
 
 if __name__ == '__main__':

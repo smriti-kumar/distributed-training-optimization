@@ -358,6 +358,8 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                 grad_Wr = quip.RHT_W(grad_hatW, state['SU'].to(device), state['SV'].to(device))
             elif args.incoh_mode == 'kron':
                 grad_Wr = state['SV'].to(device) @ grad_hatW @ state['SU'].to(device).T
+            elif args.incoh_mode == 'had_left':
+                grad_Wr = utils.matmul_hadUt(grad_hatW * state['SU'].to(device))
             else:
                 raise NotImplementedError
             
@@ -365,12 +367,10 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             d = state['d']
             grad_blocks = grad_Wr.reshape(m // d, d, n // d, d).permute(0, 2, 1, 3).contiguous()
             grad_coeffs = quip.ihbc_transform(grad_blocks.reshape((m // d) * (n // d), d, d)).reshape(m // d, n // d, d * d // 8, 8)
-            glog.info(f"Gradient to coefficient processing")
 
             if state['momentum'] is None:
                 state['momentum'] = torch.zeros_like(grad_coeffs)
             state['momentum'] = momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_coeffs
-            glog.info(f"Momentum update")
 
             directions = state['directions']
             neighbors_table = state['neighbors_table']
