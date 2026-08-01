@@ -62,6 +62,7 @@ parser.add_argument('--ft_grad_ckpt', action='store_true')
 parser.add_argument('--sparse_ft_epochs', default=0, type=int)
 parser.add_argument('--sparse_ft_num_flips', default=1, type=int)
 parser.add_argument('--sparse_ft_momentum_rate', default=0.9, type=float)
+parser.add_argument('--sparse_ft_warmup_batches', default=0, type=int)
 
 
 def check_exist(idx, args):

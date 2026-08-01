@@ -318,6 +318,151 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
             val_loss += torch.nn.MSELoss()(output, target).item()
             count += 1
     prev_loss = val_loss / count
+
+    warmup_batches = getattr(args, 'sparse_ft_warmup_batches', 0)
+    if warmup_batches > 0:
+        it = iter(train_dl)
+        for _ in range(warmup_batches):
+            source, target = next(it)
+            source = source.to(device).float()
+            target = target.to(device).float()
+            mixed_layer.zero_grad()
+            output = mixed_layer(source, position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
+            torch.nn.MSELoss()(output, target).backward()
+            for linear_attr, name in quant_order:
+                module = attrgetter(linear_attr)(mixed_layer)
+                state = clique_state[name]
+
+                grad_hatW = module.weight.grad.detach().to(module.weight.dtype)
+
+                if args.incoh_mode == 'had':
+                    grad_Wr = quip.RHT_W(grad_hatW, state['SU'].to(device), state['SV'].to(device))
+                elif args.incoh_mode == 'kron':
+                    grad_Wr = state['SV'].to(device) @ grad_hatW @ state['SU'].to(device).T
+                elif args.incoh_mode == 'had_left':
+                    grad_Wr = utils.matmul_hadUt(grad_hatW * state['SU'].to(device))
+                else:
+                    raise NotImplementedError
+
+                m, n = state['orig_shape']
+                d = state['d']
+                grad_blocks = grad_Wr.reshape(m // d, d, n // d, d).permute(0, 2, 1, 3).contiguous()
+                grad_coeffs = quip.ihbc_transform(grad_blocks.reshape((m // d) * (n // d), d, d)).reshape(m // d, n // d, d * d // 8, 8)
+    
+                if state['momentum'] is None:
+                    state['momentum'] = torch.zeros_like(grad_coeffs)
+                state['momentum'] = momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_coeffs
+        mixed_layer.zero_grad()
+
+    for epoch in range(args.sparse_ft_epochs):
+        mixed_layer.zero_grad()
+
+        total_loss = 0
+        error = 0
+        count = 0
+        for source, target in train_dl:
+            source = source.to(device).float()
+            target = target.to(device).float()
+            mixed_layer.zero_grad()
+            output = mixed_layer(source, position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
+            loss = torch.nn.MSELoss()(output, target)
+            loss.backward()
+            total_loss += loss.item()
+            error += (output - target).norm().item()
+            count += 1
+
+            for quant_i, (linear_attr, name) in enumerate(quant_order):
+                module = attrgetter(linear_attr)(mixed_layer)
+                state = clique_state[name]
+    
+                grad_hatW = module.weight.grad.detach().to(module.weight.dtype)
+    
+                if args.incoh_mode == 'had': # since indices are based on the incoherence processed weights, need to transform gradients too
+                    grad_Wr = quip.RHT_W(grad_hatW, state['SU'].to(device), state['SV'].to(device))
+                elif args.incoh_mode == 'kron':
+                    grad_Wr = state['SV'].to(device) @ grad_hatW @ state['SU'].to(device).T
+                elif args.incoh_mode == 'had_left':
+                    grad_Wr = utils.matmul_hadUt(grad_hatW * state['SU'].to(device))
+                else:
+                    raise NotImplementedError
+                
+                m, n = state['orig_shape']
+                d = state['d']
+                grad_blocks = grad_Wr.reshape(m // d, d, n // d, d).permute(0, 2, 1, 3).contiguous()
+                grad_coeffs = quip.ihbc_transform(grad_blocks.reshape((m // d) * (n // d), d, d)).reshape(m // d, n // d, d * d // 8, 8)
+    
+                if state['momentum'] is None:
+                    state['momentum'] = torch.zeros_like(grad_coeffs)
+                state['momentum'] = momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_coeffs
+    
+                directions = state['directions']
+                neighbors_table = state['neighbors_table']
+                for i in range(m // d):
+                    for j in range(n // d):
+                        Q_curr = state['Qidxs'][i, j]
+                        momentum_curr = state['momentum'][i, j]
+                        scores = momentum_curr @ directions.T
+                        neighbors = neighbors_table[Q_curr.long()]
+                        scores = scores.masked_fill(neighbors < 0, float('inf'))
+                        best_scores, best_directions = scores.min(dim=-1)
+                        values, inds = torch.topk(best_scores, args.sparse_ft_num_flips, largest=False)
+                        inds = inds[values < 0]
+                        if inds.numel() == 0: 
+                            continue
+                        Q_curr[inds] = neighbors_table[Q_curr[inds].long(), best_directions[inds]].long()
+    
+                Wscale = state['SV'].abs().mean()
+                total_scale = state['Xscale'] * Wscale
+                grid = state['codebook'].grid
+                coeffs = grid[state['Qidxs'].long()].reshape((m // d) * (n // d), d * d)
+                blocks = quip.hbc_transform((coeffs * total_scale)).reshape(m // d, n // d, d, d)
+                hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
+    
+                new_hatW = quip.incoherence_process(hatWr, state['SU'].to(f'cuda:{device}'), state['SV'].sign().to(f'cuda:{device}'), state.get('scaleWH'), args)
+                new_hatW = new_hatW.to(module.weight.dtype)
+                curr = 0
+                pieces = []
+                for shape, scale in zip(state['shapes'], state['scales']):
+                    pieces.append(new_hatW[curr:curr + shape[0]] * scale)
+                    curr += shape[0]
+                with torch.no_grad():
+                    module.weight.data.copy_(torch.cat(pieces).to(module.weight.dtype))
+        
+        train_loss = total_loss / count
+        train_error = error / count
+        glog.info(f"epoch {epoch}, loss: {train_loss}, error: {train_error}")
+
+        val_loss = 0
+        count = 0
+        with torch.no_grad():
+            for source, target in valid_dl:
+                source = source.to(device).float()
+                target = target.to(device).float()
+                output = mixed_layer(source, position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
+                val_loss += torch.nn.MSELoss()(output, target).item()
+                count += 1
+        val_loss = val_loss / count
+        if val_loss < prev_loss:
+            prev_loss = val_loss
+        glog.info(f"epoch {epoch}: val loss: {val_loss:.6e}, best val loss: {prev_loss:.6e}")
+
+    mixed_layer = mixed_layer.cpu()
+    return mixed_layer
+
+def sparse_finetune_layer_old(mixed_layer, quant_order, clique_state, device, train_dl, valid_dl, args):
+    mixed_layer = mixed_layer.to(device)
+    momentum_rate = args.sparse_ft_momentum_rate
+
+    val_loss = 0
+    count = 0
+    with torch.no_grad():
+        for source, target in valid_dl:
+            source = source.to(device).float()
+            target = target.to(device).float()
+            output = mixed_layer(source, position_ids=torch.arange(source.shape[1], device=device).unsqueeze(0))[0]
+            val_loss += torch.nn.MSELoss()(output, target).item()
+            count += 1
+    prev_loss = val_loss / count
     prev_Q = {name: clique_state[name]['Qidxs'].clone() for _, name in quant_order}
     prev_W = {la: attrgetter(la)(mixed_layer).weight.data.clone() for la, _ in quant_order}
 
