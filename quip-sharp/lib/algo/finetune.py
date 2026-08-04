@@ -11,7 +11,7 @@ from torch import nn
 
 from lib import codebook, utils
 from lib.linear import *
-from lib.algo.e8_analytic_kernel import e8_analytic_score
+from lib.algo.e8_analytic_kernel import e8_best_valid, set_e8_directions, build_valid_bits
 
 from . import quip
 
@@ -303,7 +303,15 @@ def build_clique_state(saved_linear, device):
     dkeys = ((neighbors['directions'].to(device) * 2).round().long() + 2)
     hashes = (dkeys * powers).sum(-1)
     hash_to_idx[hashes] = torch.arange(neighbors['directions'].shape[0], device=device)
- 
+
+    # e8_best_valid's constant-memory direction table must use the same row
+    # ordering as neighbors['table']'s columns -- pass the real table here,
+    # not e8_analytic_kernel's own build_e8_directions() enumeration. Cheap
+    # and idempotent, so it's fine to call again on every layer even though
+    # the file (and therefore this table) never actually changes.
+    set_e8_directions(neighbors['directions'].to(device))
+    valid_bits = build_valid_bits(neighbors['table'].to(device))
+
     return {
         'hatWr': saved_linear['hatWr'].to(device).clone(),
         'Qidxs': Qidxs,
@@ -319,6 +327,8 @@ def build_clique_state(saved_linear, device):
         'neighbors_table': neighbors['table'].to(device),
         'directions': neighbors['directions'].to(device),
         'directions_lookup': lookup,
+        'hash_to_idx': hash_to_idx,
+        'valid_bits': valid_bits,
         'hadK': hadK,
         'K_had': K
     }
@@ -392,6 +402,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
     total_time_weight_blocks_reshaping = 0.0
     total_time_weight_incoh_proc = 0.0
     total_time_weight_pieces = 0.0
+    total_time_e8_best_valid = 0.0
 
     for epoch in range(args.sparse_ft_epochs):
         mixed_layer.zero_grad()
@@ -449,28 +460,20 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
                 total_time_momentum_update += time.perf_counter() - t_before_momentum_update
 
                 t0 = time.perf_counter()
-                directions = state['directions']
                 neighbors_table = state['neighbors_table']
-                directions_lookup = state['directions_lookup']
-                hash_to_idx = state['hash_to_idx']
+                valid_bits = state['valid_bits']
 
                 P, Qd, G, _ = state['momentum'].shape
                 mom = state['momentum'].reshape(-1, 8)
                 Qflat = state['Qidxs'].reshape(-1)
 
-                best_score, dir_hash = e8_analytic_score(mom.contiguous()) # kernel
-                dir_idx = hash_to_idx[dir_hash.long()]
-                landing = neighbors_table[Qflat.long(), dir_idx]
-
-                invalid = landing < 0
-                if invalid.any():
-                    inv = invalid.nonzero(as_tuple=True)[0]
-                    sc = mom[inv] @ directions.T
-                    nb = neighbors_table[Qflat[inv].long()]
-                    sc = sc.masked_fill(nb < 0, float('inf'))
-                    s_inv, d_inv = sc.min(dim=-1)
-                    best_score[inv] = s_inv
-                    landing[inv] = neighbors_table[Qflat[inv].long(), d_inv]
+                time_before_e8_best_valid = time.perf_counter()
+                best_score, dir_idx = e8_best_valid(mom.contiguous(), Qflat.long(), valid_bits) # kernel, validity baked in
+                # dir_idx is -1 (score +inf) wherever no valid direction exists; clamp
+                # before gathering so that never-taken row doesn't index out of range.
+                landing = neighbors_table[Qflat.long(), dir_idx.clamp(min=0).long()]
+                torch.cuda.synchronize(device)
+                total_time_e8_best_valid += time.perf_counter() - time_before_e8_best_valid
 
                 bs = best_score.reshape(P * Qd, G)
                 lg = landing.reshape(P * Qd, G)
@@ -611,6 +614,7 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
     glog.info(f"total ihbc time: {total_time_ihbc:.4f}s")
     glog.info(f"total grad reshaping time: {total_time_grad_reshaping:.4f}s")
     glog.info(f"total momentum update time: {total_time_momentum_update:.4f}s")
+    glog.info(f"total e8 best valid time: {total_time_e8_best_valid:.4f}s")
     glog.info(f"total flip search time: {total_time_flip_search:.4f}s")
     glog.info(f"total hbc time: {total_time_hbc:.4f}s")
     glog.info(f"total weight blocks reshaping time: {total_time_weight_blocks_reshaping:.4f}s")
