@@ -16,6 +16,7 @@ from transformers.modeling_attn_mask_utils import \
 
 from lib import codebook, utils
 from lib.algo import finetune, quip
+from lib.algo.e8_analytic_kernel import e8_analytic_score
 from lib.linear import FusedLinear
 from model.llama import LlamaDecoderLayer
 
