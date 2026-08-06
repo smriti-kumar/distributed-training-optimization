@@ -472,7 +472,7 @@ def sparse_finetune_e2e(model, quant_order, clique_state, train_dl, valid_dl, po
     count = 0
     with torch.no_grad():
         for source, target in valid_dl:
-            out = model.model(inputs_embeds=source.to(device), position_ids=position_ids, attention_mask=attention_mask, use_cache=False).last_hidden_state
+            out = model.model(inputs_embeds=source.to(device).to(torch.bfloat16), position_ids=position_ids, attention_mask=attention_mask, use_cache=False).last_hidden_state
             val_loss_sum += torch.nn.MSELoss()(out.float(), target.to(device).float()).item()
             count += 1
     prev_loss = val_loss_sum / count
@@ -490,7 +490,7 @@ def sparse_finetune_e2e(model, quant_order, clique_state, train_dl, valid_dl, po
     for epoch in range(args.sparse_ft_e2e_epochs):
         for source, target in train_dl:
             model.zero_grad()
-            out = model.model(inputs_embeds=source.to(device),
+            out = model.model(inputs_embeds=source.to(device).to(torch.bfloat16),
                               position_ids=position_ids, attention_mask=attention_mask,
                               use_cache=False).last_hidden_state
             loss = torch.nn.MSELoss()(out.float(), target.to(device).float())
@@ -504,7 +504,7 @@ def sparse_finetune_e2e(model, quant_order, clique_state, train_dl, valid_dl, po
         count = 0
         with torch.no_grad():
             for source, target in valid_dl:
-                out = model.model(inputs_embeds=source.to(device), position_ids=position_ids, attention_mask=attention_mask, use_cache=False).last_hidden_state
+                out = model.model(inputs_embeds=source.to(device).to(torch.bfloat16), position_ids=position_ids, attention_mask=attention_mask, use_cache=False).last_hidden_state
                 val_loss_sum += torch.nn.MSELoss()(out.float(), target.to(device).float()).item()
                 count += 1
         val_loss = val_loss_sum / count

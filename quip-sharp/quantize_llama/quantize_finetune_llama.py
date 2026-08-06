@@ -65,6 +65,7 @@ parser.add_argument('--sparse_ft_num_flips', default=1, type=int)
 parser.add_argument('--sparse_ft_momentum_rate', default=0.9, type=float)
 parser.add_argument('--sparse_ft_warmup_batches', default=0, type=int)
 parser.add_argument('--sparse_ft_e2e_epochs', default=0, type=int)
+parser.add_argument('--sparse_ft_e2e_only', default=False, action='store_true')
 
 
 def check_exist(idx, args):
@@ -199,83 +200,84 @@ def main(args):
         orig_emb_cache[0][:args.batch_size], 0)
 
     cur_device = 0
-    proc_list = [None for _ in range(nproc)]
-    for i in range(len(model.model.layers)):
-        glog.info(f'layer {i} gpu {cur_device}')
-        if proc_list[cur_device] is not None:
-            proc_list[cur_device].join()
-            if cur_device == 0:
-                orig_emb_cache[0].copy_(orig_emb_cache[-1])
-        if cur_device + 1 < nproc and proc_list[cur_device + 1] is not None:
-            proc_list[cur_device + 1].join()
-        utils.clean()
-
-        if args.ft_epochs > 0 or args.sparse_ft_epochs > 0:
-            st = time.time()
-            position_ids = position_ids.to(cur_device)
-            attention_mask = attention_mask.to(cur_device)
-            model.model.layers[i].to(cur_device)
-            for j in range(args.devset_size // args.batch_size):
-                orig_emb_cache[cur_device + 1][
-                    args.batch_size * j : args.batch_size * (j + 1)] = \
-                    model.model.layers[i](
-                        orig_emb_cache[cur_device][
-                            args.batch_size * j : args.batch_size * (j + 1)].to(cur_device),
-                        position_ids=position_ids,
-                        attention_mask=attention_mask,
-                        use_cache=False,
-                        output_attentions=False)[0].cpu()
-            model.model.layers[i].cpu()
-            orig_msv = orig_emb_cache[cur_device].float().norm(
-            )**2 / orig_emb_cache[cur_device].numel()
-            target_msv = orig_emb_cache[cur_device + 1].float().norm(
-            )**2 / orig_emb_cache[cur_device + 1].numel()
-            position_ids = position_ids.cpu()
-            attention_mask = attention_mask.cpu()
+    if not args.sparse_ft_e2e_only:
+        proc_list = [None for _ in range(nproc)]
+        for i in range(len(model.model.layers)):
+            glog.info(f'layer {i} gpu {cur_device}')
+            if proc_list[cur_device] is not None:
+                proc_list[cur_device].join()
+                if cur_device == 0:
+                    orig_emb_cache[0].copy_(orig_emb_cache[-1])
+            if cur_device + 1 < nproc and proc_list[cur_device + 1] is not None:
+                proc_list[cur_device + 1].join()
             utils.clean()
-            glog.info(
-                'computed original embedding for layer {} in {}s, pre msv {}, post msv {}'
-                .format(i,
-                        time.time() - st, orig_msv, target_msv))
 
-        proc_list[cur_device] = mp.Process(target=quantize_llama_layer,
-                                           args=(
-                                               model.model.layers[i],
-                                               i,
-                                               cb,
-                                               args,
-                                               cur_device,
-                                               quantized_input if args.sparse_ft_epochs > 0 else orig_emb_cache[cur_device],
-                                               orig_emb_cache[cur_device + 1],
-                                               all_config['model_config'],
-                                           ))
-        proc_list[cur_device].start()
-
-        if args.sparse_ft_epochs > 0:
-            proc_list[cur_device].join()
-            if cur_device == 0:
-                orig_emb_cache[0].copy_(orig_emb_cache[-1])
-            quantized_layer = get_quantized_layer(i, all_config['model_config'], args, cur_device)
-            new_quant = torch.zeros_like(quantized_input)
-            pos_ids = position_ids.to(cur_device)
-            attn_mask = attention_mask.to(cur_device)
-            with torch.no_grad():
+            if args.ft_epochs > 0 or args.sparse_ft_epochs > 0:
+                st = time.time()
+                position_ids = position_ids.to(cur_device)
+                attention_mask = attention_mask.to(cur_device)
+                model.model.layers[i].to(cur_device)
                 for j in range(args.devset_size // args.batch_size):
-                    s = slice(args.batch_size * j, args.batch_size * (j + 1))
-                    new_quant[s] = quantized_layer(quantized_input[s].to(cur_device), position_ids=pos_ids, attention_mask=attn_mask, use_cache=False, output_attentions=False)[0].cpu()
-            quantized_input = new_quant
-            quantized_layer.cpu()
-            del quantized_layer, pos_ids, attn_mask, new_quant
-            proc_list[cur_device].close()
-            proc_list[cur_device] = None
-            gc.collect()
-            utils.clean()
+                    orig_emb_cache[cur_device + 1][
+                        args.batch_size * j : args.batch_size * (j + 1)] = \
+                        model.model.layers[i](
+                            orig_emb_cache[cur_device][
+                                args.batch_size * j : args.batch_size * (j + 1)].to(cur_device),
+                            position_ids=position_ids,
+                            attention_mask=attention_mask,
+                            use_cache=False,
+                            output_attentions=False)[0].cpu()
+                model.model.layers[i].cpu()
+                orig_msv = orig_emb_cache[cur_device].float().norm(
+                )**2 / orig_emb_cache[cur_device].numel()
+                target_msv = orig_emb_cache[cur_device + 1].float().norm(
+                )**2 / orig_emb_cache[cur_device + 1].numel()
+                position_ids = position_ids.cpu()
+                attention_mask = attention_mask.cpu()
+                utils.clean()
+                glog.info(
+                    'computed original embedding for layer {} in {}s, pre msv {}, post msv {}'
+                    .format(i,
+                            time.time() - st, orig_msv, target_msv))
 
-        cur_device = (cur_device + 1) % nproc
+            proc_list[cur_device] = mp.Process(target=quantize_llama_layer,
+                                            args=(
+                                                model.model.layers[i],
+                                                i,
+                                                cb,
+                                                args,
+                                                cur_device,
+                                                quantized_input if args.sparse_ft_epochs > 0 else orig_emb_cache[cur_device],
+                                                orig_emb_cache[cur_device + 1],
+                                                all_config['model_config'],
+                                            ))
+            proc_list[cur_device].start()
 
-    for p in proc_list:
-        if p is not None:
-            p.join()
+            if args.sparse_ft_epochs > 0:
+                proc_list[cur_device].join()
+                if cur_device == 0:
+                    orig_emb_cache[0].copy_(orig_emb_cache[-1])
+                quantized_layer = get_quantized_layer(i, all_config['model_config'], args, cur_device)
+                new_quant = torch.zeros_like(quantized_input)
+                pos_ids = position_ids.to(cur_device)
+                attn_mask = attention_mask.to(cur_device)
+                with torch.no_grad():
+                    for j in range(args.devset_size // args.batch_size):
+                        s = slice(args.batch_size * j, args.batch_size * (j + 1))
+                        new_quant[s] = quantized_layer(quantized_input[s].to(cur_device), position_ids=pos_ids, attention_mask=attn_mask, use_cache=False, output_attentions=False)[0].cpu()
+                quantized_input = new_quant
+                quantized_layer.cpu()
+                del quantized_layer, pos_ids, attn_mask, new_quant
+                proc_list[cur_device].close()
+                proc_list[cur_device] = None
+                gc.collect()
+                utils.clean()
+
+            cur_device = (cur_device + 1) % nproc
+
+        for p in proc_list:
+            if p is not None:
+                p.join()
 
     if args.sparse_ft_e2e_epochs > 0:
         emb = model.model.embed_tokens(devset)
