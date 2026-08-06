@@ -64,6 +64,7 @@ parser.add_argument('--sparse_ft_epochs', default=0, type=int)
 parser.add_argument('--sparse_ft_num_flips', default=1, type=int)
 parser.add_argument('--sparse_ft_momentum_rate', default=0.9, type=float)
 parser.add_argument('--sparse_ft_warmup_batches', default=0, type=int)
+parser.add_argument('--sparse_ft_e2e_epochs', default=0, type=int)
 
 
 def check_exist(idx, args):
@@ -276,6 +277,60 @@ def main(args):
         if p is not None:
             p.join()
 
+    if args.sparse_ft_e2e_epochs > 0:
+        emb = model.model.embed_tokens(devset)
+        quant_order = [('self_attn.qkv_proj', 'qkv'), ('self_attn.o_proj', 'o'), ('mlp.upgate_proj', 'up'), ('mlp.down_proj', 'down')]
+
+        model.model = model.model.to(cur_device)
+        target = torch.zeros_like(emb)  
+        with torch.no_grad():
+            for i in range(0, emb.shape[0], args.ft_bs):
+                s = slice(i, min(i + args.ft_bs, emb.shape[0]))
+                target[s] = model.model(inputs_embeds=emb[s].to(cur_device), use_cache=False).last_hidden_state.cpu()
+        model.model = model.model.cpu()
+        utils.clean()
+
+        for i in range(len(model.model.layers)):
+            model.model.layers[i] = get_quantized_layer(i, all_config['model_config'], args, cur_device)
+        model.model = model.model.to(torch.bfloat16).to(cur_device)
+        if args.ft_grad_ckpt:
+            model.gradient_checkpointing_enable()
+
+        clique_state = {}
+        layer_quant_order = []
+        for i in range(len(model.model.layers)):
+            for linear_attr, name in quant_order:
+                saved = torch.load(f'{args.save_path}/{i}_{name}.pt', map_location='cpu')
+                state = finetune.build_clique_state(saved, cur_device)
+                state['codebook'] = cb.to(cur_device)
+                clique_state[(i, name)] = state
+                layer_quant_order.append((i, linear_attr, name))
+                attrgetter(linear_attr)(model.model.layers[i]).weight.requires_grad_(True)
+
+        train_dl, valid_dl = utils.split_data(emb, target, args)
+        with torch.enable_grad():
+            model, clique_state = finetune.sparse_finetune_e2e(model, layer_quant_order, clique_state, train_dl, valid_dl, None, None, cur_device, args)
+
+        for (i, name), state in clique_state.items():
+            saved = torch.load(f'{args.save_path}/{i}_{name}.pt', map_location='cpu')
+            m, n = state['orig_shape']
+            d = state['d']
+            total_scale = state['Xscale'] * state['SV'].abs().mean()
+            coeffs = state['codebook'].grid[state['Qidxs'].long()].reshape((m // d) * (n // d), d * d)
+            blocks = quip.hbc_transform(coeffs * total_scale).reshape(m // d, n // d, d, d)
+            hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
+            new_hatW = quip.incoherence_process(hatWr, state['SU'].to(0), state['SV'].sign().to(0), state.get('scaleWH'), args)
+            saved['hatW'] = new_hatW[:m,:n].half().cpu()
+            saved['hatWr'] = hatWr.half().cpu()
+            saved['Qidxs'] = state['Qidxs'].cpu()
+            torch.save(saved, f'{args.save_path}/{i}_{name}.pt')
+
+        for i in range(len(model.model.layers)):
+            torch.save({
+                'input_layernorm': model.model.layers[i].input_layernorm.weight.detach().cpu(),
+                'post_attention_layernorm': model.model.layers[i].post_attention_layernorm.weight.detach().cpu(),
+            }, f'{args.save_path}/{i}_layernorm.pt')
+        torch.save(model.model.norm.weight.detach().cpu(), f'{args.save_path}/final_norm.pt')
 
 if __name__ == '__main__':
     torch.set_grad_enabled(False)
