@@ -351,7 +351,7 @@ def flipping_algorithm(module, state, args, device, momentum_rate):
 
     if state['momentum'] is None:
         state['momentum'] = torch.zeros_like(grad_coeffs)
-    state['momentum'] = momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_coeffs
+    state['momentum'] = (momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_coeffs).to(grad_coeffs.dtype)
 
     neighbors_table = state['neighbors_table']
     valid_bits = state['valid_bits']
@@ -477,17 +477,17 @@ def sparse_finetune_e2e(model, quant_order, clique_state, train_dl, valid_dl, po
             count += 1
     prev_loss = val_loss_sum / count
     prev_Q = {i: state['Qidxs'].clone() for i, state in clique_state.items()}
-    prev_W = {(i, name): attrgetter(linear_attr)(model.model.layers[i]).weight.data.clone() for i, linear_attr, name in quant_order}
 
     other_params = []
     for pname, p in model.named_parameters():
         if 'norm' in pname and pname.endswith('.weight'):
             p.requires_grad_(True)
             other_params.append(p)
-    adam = torch.optim.Adam(other_params, lr=getattr(args, 'e2e_other_lr', 1e-4))
+    adam = torch.optim.AdamW(other_params, lr=5e-5)
     prev_other = [p.detach().clone() for p in other_params]
 
     for epoch in range(args.sparse_ft_e2e_epochs):
+        model.train()
         for source, target in train_dl:
             model.zero_grad()
             out = model.model(inputs_embeds=source.to(device).to(torch.bfloat16),
@@ -502,6 +502,7 @@ def sparse_finetune_e2e(model, quant_order, clique_state, train_dl, valid_dl, po
 
         val_loss_sum = 0
         count = 0
+        model.eval()
         with torch.no_grad():
             for source, target in valid_dl:
                 out = model.model(inputs_embeds=source.to(device).to(torch.bfloat16), position_ids=position_ids, attention_mask=attention_mask, use_cache=False).last_hidden_state
@@ -511,7 +512,6 @@ def sparse_finetune_e2e(model, quant_order, clique_state, train_dl, valid_dl, po
         if val_loss < prev_loss:
             prev_loss = val_loss
             prev_Q = {i: state['Qidxs'].clone() for i, state in clique_state.items()}
-            prev_W = {(i, name): attrgetter(linear_attr)(model.model.layers[i]).weight.data.clone() for i, linear_attr, name in quant_order}
             prev_other = [p.detach().clone() for p in other_params]
         glog.info(f"e2e epoch {epoch}: val loss: {val_loss:.6e}, best val loss {prev_loss:.6e}")
 
@@ -521,7 +521,34 @@ def sparse_finetune_e2e(model, quant_order, clique_state, train_dl, valid_dl, po
         for p, best in zip(other_params, prev_other):
             p.copy_(best)
     for i, linear_attr, name in quant_order:
-        attrgetter(linear_attr)(model.model.layers[i]).weight.data.copy_(prev_W[(i, name)])
+        module = attrgetter(linear_attr)(model.model.layers[i])
+        state = clique_state[(i, name)]
+        m, n = state['orig_shape']
+        d = state['d']
+        module = attrgetter(linear_attr)(model.model.layers[i])
+        state = clique_state[(i, name)]
+        Wscale = state['SV'].abs().mean()
+        total_scale = state['Xscale'] * Wscale
+        grid = state['codebook'].grid
+        coeffs = grid[state['Qidxs'].long()].reshape((m // d) * (n // d), d * d)
+        blocks = quip.hbc_transform((coeffs * total_scale)).reshape(m // d, n // d, d, d)
+        hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
+    
+        if args.incoh_mode == 'had_left':
+            new_hatW = utils.matmul_hadU_cuda(hatWr, state['hadK'], state['K_had']) * state['SU'].to(device)
+            if args.rescale_WH:
+                new_hatW = new_hatW / state['scaleWH'].to(device)[None, :]
+        else:
+            new_hatW = quip.incoherence_process(hatWr, state['SU'].to(device), state['SV'].sign().to(device), state.get('scaleWH'), args)
+        new_hatW = new_hatW.to(module.weight.dtype)
+    
+        curr = 0
+        pieces = []
+        for shape, scale in zip(state['shapes'], state['scales']):
+            pieces.append(new_hatW[curr:curr + shape[0]] * scale)
+            curr += shape[0]
+        with torch.no_grad():
+            module.weight.data.copy_(torch.cat(pieces).to(module.weight.dtype))
     return model, clique_state
 
 def sparse_finetune_layer_old(mixed_layer, quant_order, clique_state, device, train_dl, valid_dl, args):

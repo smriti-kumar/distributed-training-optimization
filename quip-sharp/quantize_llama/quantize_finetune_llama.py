@@ -296,7 +296,7 @@ def main(args):
             model.model.layers[i] = get_quantized_layer(i, all_config['model_config'], args, cur_device)
         model.model = model.model.to(torch.bfloat16).to(cur_device)
         if args.ft_grad_ckpt:
-            model.gradient_checkpointing_enable()
+            model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
 
         clique_state = {}
         layer_quant_order = []
