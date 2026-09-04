@@ -292,9 +292,12 @@ def main(args):
         model.model = model.model.cpu()
         utils.clean()
 
+        original_lm_head_w = model.lm_head.weight.detach().clone().to(cur_device)
+
         for i in range(len(model.model.layers)):
             model.model.layers[i] = get_quantized_layer(i, all_config['model_config'], args, cur_device)
         model.model = model.model.to(torch.bfloat16).to(cur_device)
+        model.lm_head = model.lm_head.to(torch.bfloat16).to(cur_device)
         if args.ft_grad_ckpt:
             model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
 
@@ -309,10 +312,12 @@ def main(args):
                 layer_quant_order.append((i, linear_attr, name))
                 attrgetter(linear_attr)(model.model.layers[i]).weight.requires_grad_(True)
 
-        train_dl, valid_dl = utils.split_data(emb, target, args)
+        # train_dl, valid_dl = utils.split_data(emb, target, args)
+        train_dl, valid_dl = utils.split_data(devset, target, args)
         with torch.enable_grad():
-            model, clique_state = finetune.sparse_finetune_e2e(model, layer_quant_order, clique_state, train_dl, valid_dl, None, None, cur_device, args)
+            model, clique_state = finetune.sparse_finetune_e2e(model, layer_quant_order, clique_state, train_dl, valid_dl, None, None, cur_device, args, original_lm_head_w.to(torch.bfloat16))
 
+        attr_for = {name: attr for attr, name in quant_order}
         for (i, name), state in clique_state.items():
             saved = torch.load(f'{args.save_path}/{i}_{name}.pt', map_location='cpu')
             m, n = state['orig_shape']
@@ -322,9 +327,13 @@ def main(args):
             blocks = quip.hbc_transform(coeffs * total_scale).reshape(m // d, n // d, d, d)
             hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
             new_hatW = quip.incoherence_process(hatWr, state['SU'].to(0), state['SV'].sign().to(0), state.get('scaleWH'), args)
+            tuned_su = attrgetter(attr_for[name])(model.model.layers[i]).tuned_su.detach().to(0)
+            new_hatW = new_hatW * tuned_su[None, :]
             saved['hatW'] = new_hatW[:m,:n].half().cpu()
             saved['hatWr'] = hatWr.half().cpu()
             saved['Qidxs'] = state['Qidxs'].cpu()
+            gain = attrgetter(attr_for[name])(model.model.layers[i]).tuned_scale.detach().item()
+            saved['scales'] = [s * gain for s in saved['scales']]
             torch.save(saved, f'{args.save_path}/{i}_{name}.pt')
 
         for i in range(len(model.model.layers)):
@@ -333,6 +342,8 @@ def main(args):
                 'post_attention_layernorm': model.model.layers[i].post_attention_layernorm.weight.detach().cpu(),
             }, f'{args.save_path}/{i}_layernorm.pt')
         torch.save(model.model.norm.weight.detach().cpu(), f'{args.save_path}/final_norm.pt')
+        torch.save(model.lm_head.weight.detach().cpu(), f'{args.save_path}/lm_head.pt')
+        torch.save(model.model.embed_tokens.weight.detach().cpu(), f'{args.save_path}/embed_tokens.pt')
 
 if __name__ == '__main__':
     torch.set_grad_enabled(False)
