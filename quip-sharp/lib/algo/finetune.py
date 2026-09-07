@@ -354,37 +354,51 @@ def flipping_algorithm(module, state, args, device, momentum_rate):
         state['momentum'] = torch.zeros_like(grad_coeffs)
     state['momentum'] = (momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_coeffs)
 
-    glog.info(f"mom zeros={ (state['momentum']==0).float().mean().item():.3f }, mean|mom|={ state['momentum'].abs().mean().item():.2e }")
+    if state.get('acc_hatWr') is None:
+        coeffs = state['codebook'].grid[state['Qidxs'].long()].reshape((m // d) * (n // d), d * d)
+        blocks = quip.hbc_transform(coeffs * (state['Xscale'] * state['SV'].abs().mean())).reshape(m // d, n // d, d, d)
+        state['acc_hatWr'] = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape']).clone()
+        state['step'] = 0
 
-    neighbors_table = state['neighbors_table']
-    valid_bits = state['valid_bits']
+    r = torch.arange(m // 8, device=device)
+    c = (r - (state['step'] % max(m // 8, n // 8))) % max(m // 8, n // 8)
+    inbounds = c < n // 8
+    r = r[inbounds]
+    c = c[inbounds]
 
-    P, Qd, G, _ = state['momentum'].shape
-    mom = state['momentum'].reshape(-1, 8)
-    Qflat = state['Qidxs'].reshape(-1)
+    momentum_reshaped = state['momentum'].reshape(m // d, n // d, d // 8, d // 8, 8, 8)
+    blockr = r // (d // 8)
+    blockc = c // (d // 8)
+    subblockr = r % (d // 8)
+    subblockc = c % (d // 8)
+    currblocks_momentum = momentum_reshaped[blockr, blockc, subblockr, subblockc].reshape(r.numel(), 8, 8).float()
 
-    best_score, dir_idx = e8_best_valid(mom.float().contiguous(), Qflat.long(), valid_bits)
-    landing = neighbors_table[Qflat.long(), dir_idx.clamp(min=0).long()]
-    bs = best_score.reshape(P * Qd, G)
-    lg = landing.reshape(P * Qd, G)
-    Qb = Qflat.reshape(P * Qd, G)
-    kf = min(args.sparse_ft_num_flips, G)
-    values, gidx = torch.topk(bs, kf, dim=1, largest=False)
-    take = values < 0
-    if take.any():
-        b_ix = torch.arange(P * Qd, device=device).unsqueeze(1).expand(-1, kf)[take]
-        g_ix = gidx[take]
-        newl = lg[b_ix, g_ix]
-        ok = newl >= 0
-        Qb[b_ix[ok], g_ix[ok]] = newl[ok].to(Qb.dtype)
-    state['Qidxs'] = Qb.reshape(P, Qd, G)
+    U, Sigma, V = torch.linalg.svd(currblocks_momentum)
+    u = U[:, :, 0] * Sigma[:, 0].sqrt().unsqueeze(-1)
+    v = V[:, 0, :] * Sigma[:, 0].sqrt().unsqueeze(-1)
 
-    Wscale = state['SV'].abs().mean()
-    total_scale = state['Xscale'] * Wscale
-    grid = state['codebook'].grid
-    coeffs = grid[state['Qidxs'].long()].reshape((m // d) * (n // d), d * d)
-    blocks = quip.hbc_transform((coeffs * total_scale)).reshape(m // d, n // d, d, d)
-    hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
+    u_quant = state['codebook'].quantize(u.to(state['codebook'].grid.dtype), return_idx=False).float()
+    v_quant = state['codebook'].quantize(v.to(state['codebook'].grid.dtype), return_idx=False).float()
+    uvT = (u_quant.unsqueeze(2) * v_quant.unsqueeze(1)).reshape(r.numel(), 64)
+    to_add = quip.hbc_transform(uvT * state['Xscale'] * state['SV'].abs().mean()).reshape(r.numel(), 8, 8)
+
+    for i in range(r.numel()):
+        currr = r[i].item() * 8
+        currc = c[i].item() * 8
+        state['acc_hatWr'][currr:currr + 8, currc:currc + 8] += to_add[i].to(state['acc_hatWr'].dtype)
+
+    state['step'] += 1
+
+    if state['step'] % max(m // 8, n // 8) == 0:
+        acc_blocks = state['acc_hatWr'].reshape(m // d, d, n // d, d).permute(0, 2, 1, 3).contiguous()
+        acc_coeffs = quip.ihbc_transform(acc_blocks.reshape((m // d) * (n // d), d, d)).reshape(-1, 8)
+        _, new_quanti = state['codebook'].quantize((acc_coeffs / (state['Xscale'] * state['SV'].abs().mean())).to(state['codebook'].grid.dtype), return_idx=True)
+        state['Qidxs'] = new_quanti.reshape(m // d, n // d, d * d // 8)
+        coeffs = state['codebook'].grid[state['Qidxs'].long()].reshape((m // d) * (n // d), d * d)
+        blocks = quip.hbc_transform(coeffs * state['Xscale'] * state['SV'].abs().mean()).reshape(m // d, n // d, d, d)
+        state['acc_hatWr'] = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape']).clone()
+
+    hatWr = state['acc_hatWr']
 
     if args.incoh_mode == 'had_left':
         new_hatW = utils.matmul_hadU_cuda(hatWr, state['hadK'], state['K_had']) * state['SU'].to(device)
@@ -467,6 +481,17 @@ def sparse_finetune_layer(mixed_layer, quant_order, clique_state, device, train_
         train_loss = total_loss / count
         train_error = error / count
         glog.info(f"epoch {epoch}, loss: {train_loss}, error: {train_error}")
+
+    for linear_attr, name in quant_order:
+        state = clique_state[name]
+        if state.get('acc_hatWr') is None:
+            continue
+        m, n = state['orig_shape']
+        d = state['d']
+        acc_blocks = state['acc_hatWr'].reshape(m // d, d, n // d, d).permute(0, 2, 1, 3).contiguous()
+        acc_coeffs = quip.ihbc_transform(acc_blocks.reshape((m // d) * (n // d), d, d)).reshape(-1, 8)
+        _, new_quanti = state['codebook'].quantize((acc_coeffs / (state['Xscale'] * state['SV'].abs().mean())).to(state['codebook'].grid.dtype), return_idx=True)
+        state['Qidxs'] = new_quanti.reshape(m // d, n // d, d * d // 8)
 
     mixed_layer = mixed_layer.cpu()
     return mixed_layer
@@ -596,3 +621,73 @@ def sparse_finetune_e2e(model, quant_order, clique_state, train_dl, valid_dl, po
         h.remove()
 
     return model, clique_state
+
+def old_flipping_algorithm(module, state, args, device, momentum_rate):
+    grad_hatW = module.weight.grad.detach().to(module.weight.dtype)
+    if args.incoh_mode == 'had':
+        grad_Wr = quip.RHT_W(grad_hatW, state['SU'].to(device), state['SV'].to(device))
+    elif args.incoh_mode == 'kron':
+        grad_Wr = state['SV'].to(device) @ grad_hatW @ state['SU'].to(device).T
+    elif args.incoh_mode == 'had_left':
+        grad_Wr = utils.matmul_hadUt_cuda(grad_hatW * state['SU'].to(device), state['hadK'], state['K_had'])
+    else:
+        raise NotImplementedError
+
+    m, n = state['orig_shape']
+    d = state['d']
+    grad_blocks = grad_Wr.reshape(m // d, d, n // d, d).permute(0, 2, 1, 3).contiguous()
+    grad_coeffs = quip.ihbc_transform(grad_blocks.reshape((m // d) * (n // d), d, d)).reshape(m // d, n // d, d * d // 8, 8)
+    grad_coeffs = grad_coeffs.to(module.weight.dtype) 
+
+    if state['momentum'] is None:
+        state['momentum'] = torch.zeros_like(grad_coeffs)
+    state['momentum'] = (momentum_rate * state['momentum'] + (1 - momentum_rate) * grad_coeffs)
+
+    glog.info(f"mom zeros={ (state['momentum']==0).float().mean().item():.3f }, mean|mom|={ state['momentum'].abs().mean().item():.2e }")
+
+    neighbors_table = state['neighbors_table']
+    valid_bits = state['valid_bits']
+
+    P, Qd, G, _ = state['momentum'].shape
+    mom = state['momentum'].reshape(-1, 8)
+    Qflat = state['Qidxs'].reshape(-1)
+
+    best_score, dir_idx = e8_best_valid(mom.float().contiguous(), Qflat.long(), valid_bits)
+    landing = neighbors_table[Qflat.long(), dir_idx.clamp(min=0).long()]
+    bs = best_score.reshape(P * Qd, G)
+    lg = landing.reshape(P * Qd, G)
+    Qb = Qflat.reshape(P * Qd, G)
+    kf = min(args.sparse_ft_num_flips, G)
+    values, gidx = torch.topk(bs, kf, dim=1, largest=False)
+    take = values < 0
+    if take.any():
+        b_ix = torch.arange(P * Qd, device=device).unsqueeze(1).expand(-1, kf)[take]
+        g_ix = gidx[take]
+        newl = lg[b_ix, g_ix]
+        ok = newl >= 0
+        Qb[b_ix[ok], g_ix[ok]] = newl[ok].to(Qb.dtype)
+    state['Qidxs'] = Qb.reshape(P, Qd, G)
+
+    Wscale = state['SV'].abs().mean()
+    total_scale = state['Xscale'] * Wscale
+    grid = state['codebook'].grid
+    coeffs = grid[state['Qidxs'].long()].reshape((m // d) * (n // d), d * d)
+    blocks = quip.hbc_transform((coeffs * total_scale)).reshape(m // d, n // d, d, d)
+    hatWr = blocks.permute(0, 2, 1, 3).reshape(state['orig_shape'])
+
+    if args.incoh_mode == 'had_left':
+        new_hatW = utils.matmul_hadU_cuda(hatWr, state['hadK'], state['K_had']) * state['SU'].to(device)
+        if args.rescale_WH:
+            new_hatW = new_hatW / state['scaleWH'].to(device)[None, :]
+    else:
+        new_hatW = quip.incoherence_process(hatWr, state['SU'].to(device), state['SV'].sign().to(device), state.get('scaleWH'), args)
+    new_hatW = new_hatW.to(module.weight.dtype)
+
+    curr = 0
+    pieces = []
+    for shape, scale in zip(state['shapes'], state['scales']):
+        pieces.append(new_hatW[curr:curr + shape[0]] * scale)
+        curr += shape[0]
+    with torch.no_grad():
+        module.weight.data.copy_(torch.cat(pieces).to(module.weight.dtype))
+        module.weight.grad = None
