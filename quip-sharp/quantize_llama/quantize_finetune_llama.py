@@ -66,6 +66,7 @@ parser.add_argument('--sparse_ft_momentum_rate', default=0.9, type=float)
 parser.add_argument('--sparse_ft_warmup_batches', default=0, type=int)
 parser.add_argument('--sparse_ft_e2e_epochs', default=0, type=int)
 parser.add_argument('--sparse_ft_e2e_only', default=False, action='store_true')
+parser.add_argument('--sparse_ft_new_lr', default=0.1, type=float)
 
 
 def check_exist(idx, args):
