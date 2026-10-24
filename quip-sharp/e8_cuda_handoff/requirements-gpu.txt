@@ -1,0 +1,5 @@
+# Install a CUDA-enabled PyTorch build appropriate for your machine first.
+triton
+pytest
+numpy
+sympy

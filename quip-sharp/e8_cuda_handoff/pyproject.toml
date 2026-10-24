@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e8-matrix-lattice-handoff"
+version = "0.3.0"
+description = "Exact E8 tensor E8 CVP and m=1..4 shell projectors, with Triton CUDA handoff for m=2,3,4"
+requires-python = ">=3.10"
+dependencies = ["torch"]
+
+[project.optional-dependencies]
+cuda = ["triton"]
+dev = ["pytest", "numpy", "sympy"]
+
+[tool.setuptools]
+py-modules = ["e8_matrix_lattice_fast", "e8_triton_projector"]
